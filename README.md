@@ -63,6 +63,23 @@ stock** (verrou optimiste ou contrainte SQL) et les **doublons de messages**.
 > Compose. Les manifests suivent la convention du lab : un dossier par service sous `k3s/`
 > (`deployment` / `service` / `ingress` / `pvc`), Traefik en ingress, namespaces centralisés.
 
+### Démarrage rapide (Taskfile)
+
+Le plus simple : un [`Taskfile.yml`](Taskfile.yml) orchestre tout ([go-task](https://taskfile.dev) — `brew install go-task`).
+
+```bash
+task up          # cluster k3d + build + import images + déploiement complet
+task status      # pods / services / ingress
+task smoke       # test bout-en-bout (réserver → payer → notifier) via l'Ingress
+task forward     # ouvrir tous les port-forwards (services, DBs, MailDev) en arrière-plan
+task unforward   # les fermer tous
+task redeploy    # rebuild + redéploiement après une modif de code
+task stop        # éteindre le cluster (données conservées) — task start pour rallumer
+task             # liste toutes les commandes
+```
+
+Les sections ci-dessous détaillent les étapes manuelles équivalentes.
+
 ### Tout déployer dans le cluster (démo de soutenance)
 
 ```bash
