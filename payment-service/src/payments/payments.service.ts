@@ -1,49 +1,66 @@
 import { Injectable } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
+import { InjectRepository } from '@nestjs/typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { CreatePaymentDto } from './dto/create-payment.dto';
+import { PaymentEntity, PaymentStatus } from './payment.entity';
 
-export type PaymentStatus = 'RECEIVED' | 'REJECTED';
-
-export interface Payment {
-  id: string;
-  reservationId: string;
-  amount: number;
-  status: PaymentStatus;
-  createdAt: string;
-}
+const PG_UNIQUE_VIOLATION = '23505';
 
 /**
- * Paiement simulé, stocké en mémoire (persistance PostgreSQL = travail perso ultérieur).
- * Idempotent : rejouer un paiement pour la même réservation renvoie l'existant
- * (exigence du sujet TickRush — ne pas émettre deux billets).
+ * Paiement simulé, persisté en PostgreSQL (TypeORM).
+ * Idempotent : rejouer un paiement pour la même réservation renvoie l'existant.
+ * L'unicité de `reservationId` en base garantit l'idempotence même sous concurrence
+ * (deux requêtes simultanées → une seule insertion, l'autre récupère l'existante).
  * Taux d'échec configurable via PAYMENT_FAILURE_RATE (0..1, défaut 0 = toujours accepté).
  */
 @Injectable()
 export class PaymentsService {
-  private readonly byReservation = new Map<string, Payment>();
+  constructor(
+    @InjectRepository(PaymentEntity)
+    private readonly repo: Repository<PaymentEntity>,
+  ) {}
 
-  authorize(dto: CreatePaymentDto): { payment: Payment; created: boolean } {
-    const existing = this.byReservation.get(dto.reservationId);
+  async authorize(
+    dto: CreatePaymentDto,
+  ): Promise<{ payment: PaymentEntity; created: boolean }> {
+    const existing = await this.repo.findOne({
+      where: { reservationId: dto.reservationId },
+    });
     if (existing) {
       return { payment: existing, created: false };
     }
 
     const failureRate = Number(process.env.PAYMENT_FAILURE_RATE ?? '0');
-    const status: PaymentStatus = Math.random() < failureRate ? 'REJECTED' : 'RECEIVED';
+    const status: PaymentStatus =
+      Math.random() < failureRate ? 'REJECTED' : 'RECEIVED';
 
-    const payment: Payment = {
-      id: randomUUID(),
+    const entity = this.repo.create({
       reservationId: dto.reservationId,
       amount: dto.amount,
       status,
-      createdAt: new Date().toISOString(),
-    };
-    this.byReservation.set(dto.reservationId, payment);
-    return { payment, created: true };
+    });
+
+    try {
+      const saved = await this.repo.save(entity);
+      return { payment: saved, created: true };
+    } catch (err) {
+      // course : violation d'unicité → un paiement a été créé entre-temps
+      if (
+        err instanceof QueryFailedError &&
+        (err.driverError as { code?: string })?.code === PG_UNIQUE_VIOLATION
+      ) {
+        const winner = await this.repo.findOneByOrFail({
+          reservationId: dto.reservationId,
+        });
+        return { payment: winner, created: false };
+      }
+      throw err;
+    }
   }
 
   /** Statut du paiement d'une réservation. 'NONE' si aucun paiement (service sain). */
-  statusOf(reservationId: string): string {
-    return this.byReservation.get(reservationId)?.status ?? 'NONE';
+  async statusOf(reservationId: string): Promise<string> {
+    const payment = await this.repo.findOne({ where: { reservationId } });
+    return payment?.status ?? 'NONE';
   }
 }

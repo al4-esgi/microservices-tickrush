@@ -18,8 +18,8 @@ export class PaymentsController {
 
   /** Déclenche un paiement simulé. 201 si créé, 200 si déjà existant (idempotent). */
   @Post()
-  create(@Body() dto: CreatePaymentDto, @Res() res: Response): void {
-    const { payment, created } = this.payments.authorize(dto);
+  async create(@Body() dto: CreatePaymentDto, @Res() res: Response): Promise<void> {
+    const { payment, created } = await this.payments.authorize(dto);
     res.status(created ? HttpStatus.CREATED : HttpStatus.OK).json(payment);
   }
 
@@ -31,7 +31,7 @@ export class PaymentsController {
   @Get('by-reservation/:reservationId/status')
   status(
     @Param('reservationId', new ParseUUIDPipe()) reservationId: string,
-  ): string {
+  ): Promise<string> {
     return this.payments.statusOf(reservationId);
   }
 }

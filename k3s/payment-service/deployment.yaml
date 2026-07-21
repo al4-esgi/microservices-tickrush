@@ -26,6 +26,26 @@ spec:
               value: "3000"
             - name: PAYMENT_FAILURE_RATE   # 0 = toujours accepté (démo prévisible)
               value: "0"
+            # Base dédiée (DNS de Service k8s) + creds depuis le Secret payment-db
+            - name: DB_HOST
+              value: payment-db
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: payment-db
+                  key: POSTGRES_DB
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: payment-db
+                  key: POSTGRES_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: payment-db
+                  key: POSTGRES_PASSWORD
           readinessProbe:
             httpGet:
               path: /

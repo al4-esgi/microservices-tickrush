@@ -36,7 +36,7 @@ forte charge, et ne jamais dupliquer ni perdre un paiement.
 | Service | Langage | Rôle |
 |---|---|---|
 | `booking-service` | Java / Spring Boot 3.5 (JDK 21) | Réservation, stock (verrou optimiste), TTL, appel protégé vers paiement |
-| `payment-service` | Node.js / TypeScript (NestJS 11) | Paiement simulé **idempotent** (succès/échec configurable) |
+| `payment-service` | Node.js / TypeScript (NestJS 11) | Paiement simulé **idempotent** et **persisté** (PostgreSQL/TypeORM) |
 | `notification-service` | _au choix_ | Confirmation par email simulé — _bonus_ |
 
 **Endpoints REST** (détails dans [docs/decoupage.md](docs/decoupage.md)) :
@@ -76,7 +76,7 @@ k3d image import tickrush/booking-service:dev tickrush/payment-service:dev -c ti
 
 # 3. Déployer : base + 2 services (chaque dossier de service inclut son ingress)
 kubectl apply -f k3s/namespace.yaml
-kubectl apply -f k3s/booking-db/ -f k3s/payment-service/ -f k3s/booking-service/
+kubectl apply -f k3s/booking-db/ -f k3s/payment-db/ -f k3s/payment-service/ -f k3s/booking-service/
 kubectl -n tickrush rollout status deployment/booking-service
 
 # 4. Appeler via la façade Traefik
@@ -161,7 +161,7 @@ curl localhost:8080/reservations/$RID/payment-status # HALF_OPEN → CLOSED
 | Nominal | `RECEIVED` | `CLOSED` | normale |
 | Panne, appels 1-4 | `UNKNOWN` (fallback) | `CLOSED` puis bascule | jusqu'au timeout |
 | Panne, appels ≥ 5 | `UNKNOWN` (fallback) | `OPEN` | **instantané** (court-circuité) |
-| Reprise, +10 s | `NONE`/`RECEIVED` | `HALF_OPEN` → `CLOSED` | normale |
+| Reprise, +10 s | `RECEIVED` | `HALF_OPEN` → `CLOSED` | normale |
 
 Preuve dans les logs (`kubectl -n tickrush logs deployment/booking-service`) : d'abord
 `ResourceAccessException` (I/O error / connect timeout = vraies tentatives), puis
@@ -178,6 +178,7 @@ microservices-tickrush/
 ├── k3s/                  # manifests Kubernetes (remplace docker-compose)
 │   ├── namespace.yaml
 │   ├── booking-db/       # PostgreSQL du booking-service
+│   ├── payment-db/       # PostgreSQL du payment-service
 │   ├── booking-service/  # deployment + service + ingress (image tickrush/booking-service)
 │   └── payment-service/  # deployment + service + ingress (image tickrush/payment-service)
 ├── booking-service/      # service Java — Spring Boot 3.5, JDK 21

@@ -17,6 +17,7 @@ Un dossier par composant, manifests bruts :
 |---|---|
 | `namespace.yaml` | namespace `tickrush` |
 | `booking-db/` | PostgreSQL du `booking-service` (secret, pvc, deployment, service) |
+| `payment-db/` | PostgreSQL du `payment-service` (secret, pvc, deployment, service) |
 | `booking-service/` | service Java (deployment + service + **ingress** `/events` `/reservations`), image `tickrush/booking-service:dev` |
 | `payment-service/` | service Node (deployment + service + **ingress** `/payments`), image `tickrush/payment-service:dev` |
 
@@ -25,8 +26,8 @@ Un dossier par composant, manifests bruts :
 > le routage est **par path sans TLS** ; pour le lab distant, passer en **host-based +
 > cert-manager** (voir la note en tête de `booking-service/ingress.yaml`).
 
-> **Une base par service** : `payment-service` est en mémoire pour l'instant ; sa base
-> PostgreSQL dédiée viendra en travail personnel.
+> **Une base par service** : `booking-service` → `booking-db`, `payment-service` → `payment-db`
+> (persistance TypeORM). Deux bases distinctes, aucun partage de schéma.
 
 ## Images (pas de registry — import direct dans k3d)
 

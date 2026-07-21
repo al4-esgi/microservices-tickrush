@@ -1,0 +1,14 @@
+# Expose la base à l'intérieur du cluster : atteinte via `payment-db:5432`.
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-db
+  namespace: tickrush
+spec:
+  selector:
+    app: payment-db
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+  type: ClusterIP
