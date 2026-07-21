@@ -1,0 +1,97 @@
+# Découpage du domaine — TickRush
+
+Event Storming *light* du sujet **TickRush** (billetterie événementielle à stock limité).
+Cette carte est la boussole des 8 prochaines séances : la table des contrats (§4) donnera
+les endpoints REST et les futurs topics Kafka.
+
+---
+
+## 1. Événements (passe 1)
+
+Événements métier au passé, dans l'ordre chronologique. Chemin nominal **et** chemins d'échec.
+
+| #  | Événement            | Déclenché quand...                                                        |
+|----|----------------------|--------------------------------------------------------------------------|
+| 1  | ÉvénementOuvert      | un organisateur met en vente un événement avec un stock de places fixe   |
+| 2  | PlacesRéservées      | un client réserve N places et le stock disponible est suffisant          |
+| 3  | RéservationRefusée   | **(échec)** le stock restant est insuffisant pour les N places demandées |
+| 4  | PaiementReçu         | le client paie sa réservation dans le délai imparti                      |
+| 5  | PaiementRefusé       | **(échec)** le PSP simulé rejette le paiement                            |
+| 6  | BilletÉmis           | le paiement est confirmé → un billet est généré pour la réservation      |
+| 7  | RéservationExpirée   | **(échec)** le délai de paiement (TTL 2 min) s'écoule sans paiement       |
+| 8  | PlacesLibérées       | une réservation expire ou est annulée → les places retournent au stock   |
+| 9  | RéservationAnnulée   | le client annule sa réservation avant paiement                           |
+
+> 9 événements, dont **3 d'échec** (RéservationRefusée, PaiementRefusé, RéservationExpirée).
+
+---
+
+## 2. Commandes (passe 2)
+
+| Commande            | Acteur              | Événement(s) résultant(s)                |
+|---------------------|---------------------|------------------------------------------|
+| OuvrirÉvénement     | Organisateur        | ÉvénementOuvert                          |
+| RéserverPlaces      | Client              | PlacesRéservées **OU** RéservationRefusée |
+| PayerRéservation    | Client              | PaiementReçu **OU** PaiementRefusé        |
+| ÉmettreBillet       | Système             | BilletÉmis                               |
+| ExpirerRéservation  | Système (scheduler) | RéservationExpirée → PlacesLibérées       |
+| AnnulerRéservation  | Client              | RéservationAnnulée → PlacesLibérées        |
+| LibérerPlaces       | Système             | PlacesLibérées                           |
+
+---
+
+## 3. Agrégats et Bounded Contexts (passes 3 & 4)
+
+### Contexte 1 — Réservation (`booking-service`, Java / Spring Boot)
+
+- **Agrégats** :
+  - `Événement` — porte le **stock** (places totales / disponibles). Cœur de la
+    contrainte « ne jamais survendre » → protégé par **verrou optimiste**.
+  - `Réservation` — cycle de vie `PENDING → PAID | EXPIRED | CANCELLED`, avec **TTL**.
+- **Événements émis** : PlacesRéservées, RéservationRefusée, RéservationExpirée,
+  PlacesLibérées, BilletÉmis, RéservationAnnulée.
+- **Événements consommés** : PaiementReçu, PaiementRefusé.
+
+### Contexte 2 — Paiement (`payment-service`, Node / NestJS)
+
+- **Agrégat** : `Paiement` — autorisation simulée (succès/échec configurable), **idempotent**
+  (un même paiement rejoué n'émet pas deux fois).
+- **Événements émis** : PaiementReçu, PaiementRefusé.
+- **Événements consommés** : PlacesRéservées (sait quelle réservation encaisser).
+
+### Contexte 3 — Notification (`notification-service`) — *bonus*
+
+- Consomme BilletÉmis / RéservationExpirée → « email » simulé de confirmation.
+
+**Test de validation des frontières** : pour un cas d'usage (réserver → payer → billet),
+Réservation↔Paiement échangent **1 appel synchrone** (statut du paiement) + des faits
+asynchrones (Kafka). ≤ 3 interactions synchrones ⇒ frontière saine, on ne fusionne pas.
+
+---
+
+## 4. Contrats
+
+### REST (synchrone — questions / actions)
+
+| Service         | Endpoint                                  | Usage                                   |
+|-----------------|-------------------------------------------|-----------------------------------------|
+| booking-service | `GET /events/{id}`                        | consulter un événement et son stock     |
+| booking-service | `POST /reservations`                      | réserver N places                       |
+| booking-service | `GET /reservations/{id}`                  | suivre une réservation                  |
+| booking-service | `GET /reservations/{id}/payment-status`   | statut de paiement (appel protégé, TP3) |
+| payment-service | `POST /payments`                          | déclencher un paiement simulé           |
+| payment-service | `GET /payments/by-reservation/{id}/status`| statut d'un paiement (cible du CB, TP3) |
+
+### Événements (asynchrone — faits → futurs topics Kafka, séance 4-5)
+
+| Événement          | Topic (pressenti)          | Émetteur        | Consommateur(s) prévu(s)         |
+|--------------------|----------------------------|-----------------|----------------------------------|
+| PlacesRéservées    | `booking.seat-reserved`    | booking-service | payment-service, notification    |
+| RéservationExpirée | `booking.reservation-expired` | booking-service | payment-service, notification |
+| PlacesLibérées     | `booking.seat-released`    | booking-service | (projection stock)               |
+| BilletÉmis         | `booking.ticket-issued`    | booking-service | notification-service             |
+| PaiementReçu       | `payment.received`         | payment-service | booking-service                  |
+| PaiementRefusé     | `payment.rejected`         | payment-service | booking-service                  |
+
+> **Clé de partition Kafka** = `reservationId` (ou `eventId`) pour garantir l'ordre par
+> réservation et l'idempotence côté consommateur.

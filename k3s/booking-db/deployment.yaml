@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: booking-db
+  namespace: tickrush
+  labels:
+    app: booking-db
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate            # base sur volume RWO : pas de rolling update
+  selector:
+    matchLabels:
+      app: booking-db
+  template:
+    metadata:
+      labels:
+        app: booking-db
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: booking-db     # POSTGRES_USER / PASSWORD / DB
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata   # sous-dossier (évite lost+found)
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          # Équivaut au healthcheck `pg_isready` du docker-compose du TP
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "booking", "-d", "bookingdb"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "booking", "-d", "bookingdb"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: booking-db-data

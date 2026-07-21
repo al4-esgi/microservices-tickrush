@@ -1,0 +1,13 @@
+# Volume persistant : les données survivent au redémarrage/suppression du pod
+# (équivaut au volume `order-db-data` du docker-compose du TP).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: booking-db-data
+  namespace: tickrush
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

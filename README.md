@@ -58,21 +58,45 @@ stock** (verrou optimiste ou contrainte SQL) et les **doublons de messages**.
 
 ## Lancement en développement local — booking-service
 
-Prérequis : JDK 21+ (le projet cible Java 21 ; testé sur JDK 24).
+Prérequis : JDK 21+ (le projet cible Java 21 ; testé sur JDK 24), Docker + `k3d`.
+
+**1. Cluster k3d + PostgreSQL** (remplace `docker compose up` — voir [k3s/README](k3s/README.md)) :
 
 ```bash
-cd booking-service
-# On exclut l'auto-config JPA tant que PostgreSQL n'est pas branché (TP2)
-SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration,org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration \
-  ./mvnw spring-boot:run
+k3d cluster create tickrush --port "8081:80@loadbalancer" --port "8443:443@loadbalancer"
+kubectl apply -f k3s/namespace.yaml
+kubectl apply -f k3s/booking-db/
+kubectl -n tickrush rollout status deployment/booking-db
 ```
 
-Vérification :
+**2. Port-forward de la base** (le service tourne en local, la base dans le cluster) :
 
 ```bash
-curl http://localhost:8080/actuator/health
-# attendu : {"status":"UP"}
+kubectl -n tickrush port-forward svc/booking-db 5432:5432   # laisser tourner
 ```
+
+**3. Le service** (dans un autre terminal) :
+
+```bash
+cd booking-service && ./mvnw spring-boot:run
+```
+
+**Vérification bout-en-bout** :
+
+```bash
+curl http://localhost:8080/actuator/health          # {"status":"UP"}
+
+# Réserver 2 places (événement seedé au démarrage)
+curl -X POST localhost:8080/reservations -H "Content-Type: application/json" \
+  -d '{"eventId":"11111111-1111-1111-1111-111111111111","customerRef":"alex@esgi","quantity":2}'
+# → 201 + {"id":..., "status":"PENDING", "expiresAt": +2 min}
+
+curl localhost:8080/reservations/<id>               # → 200
+curl localhost:8080/events/11111111-1111-1111-1111-111111111111  # availableSeats décrémenté
+```
+
+Deux événements sont amorcés au démarrage (`DataSeeder`) : un concert (100 places) et un
+match à **5 places** pour démontrer facilement le refus pour stock insuffisant (409).
 
 ## Structure du dépôt
 

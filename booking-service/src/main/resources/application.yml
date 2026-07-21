@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: booking-service
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:bookingdb}
+    username: ${DB_USER:booking}
+    password: ${DB_PASSWORD:booking}
+  jpa:
+    hibernate:
+      ddl-auto: update   # acceptable pour le TP ; en prod : migrations (Flyway)
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+# TTL d'une réservation non payée (user story 2 : remise en vente après 2 min)
+reservation:
+  ttl-seconds: 120

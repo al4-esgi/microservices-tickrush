@@ -1,22 +1,52 @@
-# Manifests Kubernetes (k3s)
+# Infrastructure Kubernetes (k3s / k3d)
 
-Déploiement du projet sur **k3s** (en remplacement de `docker compose`, option validée par
-le formateur). Convention reprise du lab :
+Le projet se déploie sur **Kubernetes** en remplacement de `docker compose` (option validée
+par le formateur). En développement, on utilise un **cluster k3d local dédié** (`tickrush`) :
+tout tourne sur la machine, la démo de soutenance est 100 % locale.
 
-- un dossier par service : `deployment.yaml`, `service.yaml`, `ingress.yaml` (si exposé),
-  `pvc.yaml` (si persistance) ;
-- namespaces centralisés dans `namespace.yaml` ;
-- Traefik en ingress controller, cert-manager pour le TLS.
+## Convention (reprise du lab)
 
-À alimenter à partir de la séance 2 (Kafka, PostgreSQL) puis au fil des services.
+Un dossier par composant, manifests bruts :
+`deployment.yaml`, `service.yaml`, `secret.yaml` (si secrets), `pvc.yaml` (si persistance),
+`ingress.yaml` (si exposé). Namespaces centralisés dans `namespace.yaml`
+(namespace unique du projet : `tickrush`). Ingress via Traefik (fourni par k3s).
 
-## Accès au cluster
+## Contenu actuel
+
+| Chemin | Rôle |
+|---|---|
+| `namespace.yaml` | namespace `tickrush` |
+| `booking-db/` | PostgreSQL du `booking-service` (secret, pvc, deployment, service) |
+
+> **Une base par service** : le service Node (`payment-service`, TP3) aura SA propre base.
+
+## Démarrer l'infra locale
 
 ```bash
-export KUBECONFIG=~/.kube/config-lab
-kubectl get nodes        # cluster « laboratory », k3s v1.35
+# 1. Cluster local (une seule fois) — Traefik est inclus dans k3s
+k3d cluster create tickrush --port "8081:80@loadbalancer" --port "8443:443@loadbalancer"
+
+# 2. Déployer PostgreSQL
+kubectl apply -f namespace.yaml
+kubectl apply -f booking-db/
+kubectl -n tickrush rollout status deployment/booking-db
+
+# 3. Rendre la base joignable depuis le service lancé en local (mvnw)
+kubectl -n tickrush port-forward svc/booking-db 5432:5432
 ```
 
-Cluster partagé (namespaces `alex-*` et `fethi-*`). Un namespace `monitoring` (Grafana)
-et `cert-manager` sont déjà déployés — réutilisables pour l'observabilité et le TLS.
+Astuces cycle de vie :
 
+```bash
+kubectl config use-context k3d-tickrush   # cibler le cluster du projet
+kubectl -n tickrush get pods,svc,pvc      # état
+k3d cluster stop tickrush                 # éteindre (sans supprimer les données)
+k3d cluster start tickrush                # rallumer
+k3d cluster delete tickrush               # tout supprimer (repart de zéro)
+```
+
+## Déploiement sur le lab distant (optionnel)
+
+Le même jeu de manifests peut cibler le cluster du lab
+(`export KUBECONFIG=~/.kube/config-lab`) où `monitoring` (Grafana) et `cert-manager`
+sont déjà déployés — utile pour un déploiement « prod-like » et l'observabilité.
