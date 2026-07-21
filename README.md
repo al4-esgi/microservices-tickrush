@@ -71,6 +71,7 @@ Le plus simple : un [`Taskfile.yml`](Taskfile.yml) orchestre tout ([go-task](htt
 task up          # cluster k3d + build + import images + déploiement complet
 task status      # pods / services / ingress
 task smoke       # test bout-en-bout (réserver → payer → notifier) via l'Ingress
+task front       # console de démo React (http://localhost:5173)
 task forward     # ouvrir tous les port-forwards (services, DBs, MailDev) en arrière-plan
 task unforward   # les fermer tous
 task redeploy    # rebuild + redéploiement après une modif de code

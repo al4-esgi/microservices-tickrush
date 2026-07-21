@@ -144,6 +144,23 @@ tasks:
     cmds:
       - kubectl -n {{.NS}} logs -f deployment/{{.CLI_ARGS}}
 
+  # ============ Front de démo ============
+  front:
+    desc: "Lancer la console de démo (Vite) sur http://localhost:5173"
+    dir: frontend
+    cmds:
+      - '[ -d node_modules ] || npm install'
+      - task: forward:maildev-bg
+      - npm run dev
+
+  # port-forward MailDev en tâche de fond (nécessaire à l'onglet Emails du front)
+  forward:maildev-bg:
+    internal: true
+    status:
+      - pgrep -f 'kubectl -n {{.NS}} port-forward svc/maildev' >/dev/null
+    cmds:
+      - nohup kubectl -n {{.NS}} port-forward svc/maildev 1080:1080 >/tmp/pf-maildev.log 2>&1 &
+
   # ============ Test rapide ============
   smoke:
     desc: "Test bout-en-bout via l'Ingress (réserver -> payer -> notifier)"
