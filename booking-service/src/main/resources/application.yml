@@ -18,8 +18,25 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info,metrics,circuitbreakers,circuitbreakerevents
 
 # TTL d'une réservation non payée (user story 2 : remise en vente après 2 min)
 reservation:
   ttl-seconds: 120
+
+# URL de payment-service : DNS de Service k8s en cluster, localhost en dev local
+payment:
+  base-url: ${PAYMENT_URL:http://localhost:3000}
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      payment:
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 2
+        # false : un circuit OUVERT ne doit PAS faire échouer la liveness probe k8s
+        # (l'état reste visible via l'endpoint actuator /actuator/circuitbreakers)
+        register-health-indicator: false

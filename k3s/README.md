@@ -16,9 +16,25 @@ Un dossier par composant, manifests bruts :
 | Chemin | Rôle |
 |---|---|
 | `namespace.yaml` | namespace `tickrush` |
+| `ingress.yaml` | façade Traefik (routage par préfixe `/events` `/reservations` `/payments`) |
 | `booking-db/` | PostgreSQL du `booking-service` (secret, pvc, deployment, service) |
+| `booking-service/` | service Java (deployment + service), image `tickrush/booking-service:dev` |
+| `payment-service/` | service Node (deployment + service), image `tickrush/payment-service:dev` |
 
-> **Une base par service** : le service Node (`payment-service`, TP3) aura SA propre base.
+> **Une base par service** : `payment-service` est en mémoire pour l'instant ; sa base
+> PostgreSQL dédiée viendra en travail personnel.
+
+## Images (pas de registry — import direct dans k3d)
+
+```bash
+docker build -t tickrush/booking-service:dev ../booking-service
+docker build -t tickrush/payment-service:dev ../payment-service
+k3d image import tickrush/booking-service:dev tickrush/payment-service:dev -c tickrush
+```
+
+> Les Deployments utilisent `imagePullPolicy: IfNotPresent` : l'image importée dans k3d
+> est utilisée telle quelle. Après un rebuild, refaire `k3d image import` puis
+> `kubectl -n tickrush rollout restart deployment/<service>`.
 
 ## Démarrer l'infra locale
 
