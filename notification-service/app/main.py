@@ -1,17 +1,18 @@
 """notification-service — envoi d'« emails » de confirmation TickRush.
 
-Pour l'instant déclenché en HTTP (endpoint /notifications/ticket-issued). Au TP4, la même
-logique d'envoi sera branchée sur un consumer Kafka (topics booking.ticket-issued /
-booking.reservation-expired) — voir docs/decoupage.md.
+Pour l'instant déclenché en HTTP (endpoint /notifications/ticket-issued). À partir du TP5,
+la même logique d'envoi sera branchée sur un consumer Kafka (topics booking.ticket-issued
+et booking.reservation-expired) - voir docs/decoupage.md.
 Les mails partent vers MailDev (faux SMTP + UI web) qui les capture sans rien envoyer.
 """
 
 import os
 import smtplib
 from email.message import EmailMessage
+from uuid import UUID
 
 from fastapi import FastAPI, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 SMTP_HOST = os.getenv("SMTP_HOST", "localhost")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "1025"))
@@ -21,10 +22,10 @@ app = FastAPI(title="notification-service", version="0.1.0")
 
 
 class TicketIssued(BaseModel):
-    to: str
-    reservationId: str
-    eventName: str
-    quantity: int = 1
+    to: str = Field(min_length=3)
+    reservationId: UUID
+    eventName: str = Field(min_length=1)
+    quantity: int = Field(default=1, ge=1, le=10)
 
 
 def send_email(to: str, subject: str, body: str) -> None:
@@ -53,4 +54,4 @@ def ticket_issued(event: TicketIssued) -> dict:
         "À bientôt,\nL'équipe TickRush"
     )
     send_email(event.to, "Votre billet TickRush", body)
-    return {"status": "sent", "to": event.to, "reservationId": event.reservationId}
+    return {"status": "sent", "to": event.to, "reservationId": str(event.reservationId)}

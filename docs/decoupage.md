@@ -1,8 +1,8 @@
 # Découpage du domaine — TickRush
 
 Event Storming *light* du sujet **TickRush** (billetterie événementielle à stock limité).
-Cette carte est la boussole des 8 prochaines séances : la table des contrats (§4) donnera
-les endpoints REST et les futurs topics Kafka.
+Cette carte est la boussole des 8 prochaines séances : la table des contrats (§4) donne
+les endpoints REST et les topics Kafka créés au TP4.
 
 ---
 
@@ -82,16 +82,20 @@ asynchrones (Kafka). ≤ 3 interactions synchrones ⇒ frontière saine, on ne f
 | payment-service | `POST /payments`                          | déclencher un paiement simulé           |
 | payment-service | `GET /payments/by-reservation/{id}/status`| statut d'un paiement (cible du CB, TP3) |
 
-### Événements (asynchrone — faits → futurs topics Kafka, séance 4-5)
+### Événements (asynchrone - topics créés au TP4, intégration applicative au TP5)
 
-| Événement          | Topic (pressenti)          | Émetteur        | Consommateur(s) prévu(s)         |
-|--------------------|----------------------------|-----------------|----------------------------------|
-| PlacesRéservées    | `booking.seat-reserved`    | booking-service | payment-service, notification    |
-| RéservationExpirée | `booking.reservation-expired` | booking-service | payment-service, notification |
-| PlacesLibérées     | `booking.seat-released`    | booking-service | (projection stock)               |
-| BilletÉmis         | `booking.ticket-issued`    | booking-service | notification-service             |
-| PaiementReçu       | `payment.received`         | payment-service | booking-service                  |
-| PaiementRefusé     | `payment.rejected`         | payment-service | booking-service                  |
+| Événement          | Topic                         | Clé Kafka       | Émetteur        | Consommateur(s) prévu(s)         |
+|--------------------|-------------------------------|-----------------|-----------------|----------------------------------|
+| PlacesRéservées    | `booking.seat-reserved`       | `eventId`       | booking-service | payment-service, notification    |
+| RéservationExpirée | `booking.reservation-expired` | `reservationId` | booking-service | payment-service, notification    |
+| PlacesLibérées     | `booking.seat-released`       | `eventId`       | booking-service | projection stock                 |
+| BilletÉmis         | `booking.ticket-issued`       | `reservationId` | booking-service | notification-service             |
+| PaiementReçu       | `payment.received`            | `reservationId` | payment-service | booking-service                  |
+| PaiementRefusé     | `payment.rejected`            | `reservationId` | payment-service | booking-service                  |
 
-> **Clé de partition Kafka** = `reservationId` (ou `eventId`) pour garantir l'ordre par
-> réservation et l'idempotence côté consommateur.
+La clé `reservationId` conserve l'ordre du cycle de vie d'une réservation et fournit la
+base de l'idempotence des consommateurs. Les événements qui modifient le stock
+(`booking.seat-reserved` et `booking.seat-released`) utilisent `eventId`, car l'ordre qui
+compte pour cette projection est celui des mutations du stock d'un événement.
+Tous les topics ont 3 partitions et un facteur de réplication de 1 dans le cluster local
+mono-broker du TP4.

@@ -22,7 +22,12 @@ export class PaymentEntity {
   @Column({ type: 'uuid', unique: true })
   reservationId!: string;
 
-  @Column({ type: 'numeric', precision: 12, scale: 2, transformer: numericTransformer })
+  @Column({
+    type: 'numeric',
+    precision: 12,
+    scale: 2,
+    transformer: numericTransformer,
+  })
   amount!: number;
 
   @Column({ type: 'varchar', length: 16 })

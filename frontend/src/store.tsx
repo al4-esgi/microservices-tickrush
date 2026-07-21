@@ -1,11 +1,5 @@
-import { createContext, useContext, useState, type ReactNode } from 'react'
-
-interface Store {
-  reservationId: string
-  setReservationId: (v: string) => void
-}
-
-const StoreContext = createContext<Store | null>(null)
+import { useState, type ReactNode } from 'react'
+import { StoreContext } from '@/store-context'
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [reservationId, setReservationId] = useState('')
@@ -14,10 +8,4 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       {children}
     </StoreContext.Provider>
   )
-}
-
-export function useStore() {
-  const ctx = useContext(StoreContext)
-  if (!ctx) throw new Error('useStore doit être utilisé dans un StoreProvider')
-  return ctx
 }

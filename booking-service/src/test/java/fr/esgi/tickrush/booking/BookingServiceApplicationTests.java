@@ -7,7 +7,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 class BookingServiceApplicationTests {
 
 	@Test
-	void contextLoads() {
+	void contextLoadsWithTheTestDatabase() {
 	}
 
 }

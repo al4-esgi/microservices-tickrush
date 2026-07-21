@@ -4,6 +4,9 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
+RUN npm run lint:check
+RUN npm test -- --runInBand
+RUN npm run test:e2e -- --runInBand
 RUN npm run build
 
 # --- Étape runtime (deps de prod seulement) ---

@@ -45,14 +45,28 @@ forte charge, et ne jamais dupliquer ni perdre un paiement.
 
 **Communication inter-services** : `booking-service` → `payment-service` en HTTP synchrone
 via le **DNS de Service Kubernetes** (`http://payment-service:3000`, aucune IP en dur),
-protégé par **timeout + circuit breaker** (Resilience4j). Les faits métier passeront par
-**Kafka** (séance 4-5) : `SeatReserved`, `ReservationExpired`, `PaymentReceived`,
-`TicketIssued`, `SeatReleased`.
+protégé par **timeout + circuit breaker** (Resilience4j). L'infrastructure **Kafka KRaft**,
+Kafka UI et les topics explicites sont opérationnels depuis le TP4. Le branchement des
+producteurs/consommateurs applicatifs arrive au TP5 : `SeatReserved`,
+`ReservationExpired`, `PaymentReceived`, `TicketIssued`, `SeatReleased`.
 
 **Pattern avancé retenu** (recommandé pour le sujet, à documenter en ADR séance 7) :
 réservation avec **TTL** + **Outbox** (émission fiable de `SeatReserved`) +
 **idempotence** du consommateur de paiement. Le piège traité : la **concurrence sur le
 stock** (verrou optimiste ou contrainte SQL) et les **doublons de messages**.
+
+### État fonctionnel après le TP4
+
+- Réservation et décrément du stock atomiques, verrou optimiste avec retries bornés et test
+  concurrent de non-survente.
+- Paiement persistant et idempotent, y compris en cas de requêtes concurrentes.
+- Appel HTTP inter-services protégé par timeout, circuit breaker et fallback métier.
+- Kafka KRaft, Kafka UI, 6 topics à 3 partitions, CLI, offsets, lag et rebalance démontrables.
+- Notification HTTP et MailDev disponibles comme bonus.
+
+L'expiration automatique, l'Outbox, les producers/consumers Kafka et l'émission automatique
+du billet restent volontairement au périmètre du TP5. Le scénario HTTP actuel les orchestre
+manuellement et ne doit pas être présenté comme un flux événementiel déjà terminé.
 
 ---
 
@@ -70,8 +84,15 @@ Le plus simple : un [`Taskfile.yml`](Taskfile.yml) orchestre tout ([go-task](htt
 ```bash
 task up          # cluster k3d + build + import images + déploiement complet
 task status      # pods / services / ingress
-task smoke       # test bout-en-bout (réserver → payer → notifier) via l'Ingress
+task test        # tests Java, Jest, FastAPI, lint et builds
+task smoke       # scénario HTTP manuel TP3/TP4 via l'Ingress
+task demo:reset  # remettre stocks, réservations et paiements à zéro (avec confirmation)
 task front       # console de démo React (http://localhost:5173)
+task kafka:topics        # lister et décrire les 6 topics
+task kafka:produce-demo  # produire 10 messages avec 3 clés
+task kafka:consume-demo  # afficher clé, partition et offset
+task kafka:lag-demo      # créer puis observer le lag d'un groupe
+task kafka:ui            # Kafka UI (http://localhost:8090)
 task forward     # ouvrir tous les port-forwards (services, DBs, MailDev) en arrière-plan
 task unforward   # les fermer tous
 task redeploy    # rebuild + redéploiement après une modif de code
@@ -80,6 +101,34 @@ task             # liste toutes les commandes
 ```
 
 Les sections ci-dessous détaillent les étapes manuelles équivalentes.
+
+### Kafka - TP4
+
+Kafka utilise deux listeners : `INTERNAL` annonce `kafka:29092` aux pods du cluster;
+`EXTERNAL` annonce `localhost:9092` aux clients du poste via `task kafka:forward`. Les
+adresses annoncées doivent être réellement joignables par le client Kafka.
+
+Les six topics sont créés par le Job `kafka-init` depuis le script versionné
+[`k3s/kafka/create-topics.sh`](k3s/kafka/create-topics.sh), avec **3 partitions** et un
+facteur de réplication **RF=1**. Trois partitions autorisent au maximum trois consommateurs
+actifs dans un même groupe. RF=1 est uniquement acceptable pour ce cluster local mono-broker;
+en production, la perte du broker supprimerait la disponibilité et pourrait perdre les
+données, donc il faudrait plusieurs brokers et typiquement RF=3.
+
+Une même clé Kafka est toujours dirigée vers la même partition : les offsets y augmentent et
+l'ordre est conservé. `CURRENT-OFFSET` est le marque-page du groupe, `LOG-END-OFFSET` la fin
+du journal et `LAG` leur différence. Lorsqu'un membre d'un groupe s'arrête, Kafka réattribue
+ses partitions aux survivants lors d'un **rebalance**. Deux groupes distincts lisent chacun
+la totalité des événements, indépendamment l'un de l'autre.
+
+**Observation vérifiée dans k3s** : les 10 messages de démonstration ont été relus deux fois
+depuis l'offset 0. Après une consommation limitée à 3 messages, le lag total mesuré était de
+7. Avec deux membres dans `tickrush-rebalance-demo`, le premier détenait les partitions 0 et
+1 et le second la partition 2; après arrêt du second, le survivant a récupéré les partitions
+0, 1 et 2.
+
+Le protocole complet de démonstration et les clés choisies par événement sont documentés dans
+[`docs/tp04-kafka.md`](docs/tp04-kafka.md) et [`docs/decoupage.md`](docs/decoupage.md).
 
 ### Tout déployer dans le cluster (démo de soutenance)
 
@@ -94,13 +143,18 @@ docker build -t tickrush/notification-service:dev ./notification-service
 k3d image import tickrush/booking-service:dev tickrush/payment-service:dev \
   tickrush/notification-service:dev -c tickrush
 
-# 3. Déployer : bases + 3 services + MailDev (chaque dossier de service inclut son ingress)
+# 3. Déployer d'abord les dépendances
 kubectl apply -f k3s/namespace.yaml
-kubectl apply -f k3s/booking-db/ -f k3s/payment-db/ -f k3s/maildev/ \
-  -f k3s/payment-service/ -f k3s/booking-service/ -f k3s/notification-service/
+kubectl apply -f k3s/booking-db/ -f k3s/payment-db/ -f k3s/maildev/
+kubectl apply -k k3s/kafka/
+kubectl -n tickrush rollout status deployment/kafka
+kubectl -n tickrush wait --for=condition=complete job/kafka-init --timeout=180s
+
+# 4. Déployer les 3 services une fois leurs dépendances prêtes
+kubectl apply -f k3s/payment-service/ -f k3s/booking-service/ -f k3s/notification-service/
 kubectl -n tickrush rollout status deployment/booking-service
 
-# 4. Appeler via la façade Traefik
+# 5. Appeler via la façade Traefik
 curl localhost:8081/events/11111111-1111-1111-1111-111111111111   # booking
 curl -X POST localhost:8081/payments -H 'Content-Type: application/json' \
   -d '{"reservationId":"<uuid>","amount":42}'                     # payment
@@ -200,12 +254,14 @@ microservices-tickrush/
 ├── README.md
 ├── docs/
 │   ├── adr/              # Architecture Decision Records (séance 7)
-│   └── decoupage.md      # Event Storming (contextes, contrats)
+│   ├── decoupage.md      # Event Storming (contextes, contrats)
+│   └── tp04-kafka.md     # démonstration partitions, offsets, lag et rebalance
 ├── k3s/                  # manifests Kubernetes (remplace docker-compose)
 │   ├── namespace.yaml
 │   ├── booking-db/       # PostgreSQL du booking-service
 │   ├── payment-db/       # PostgreSQL du payment-service
 │   ├── maildev/          # faux SMTP + UI web (capture les emails)
+│   ├── kafka/            # Kafka KRaft + UI + PVC + initialisation des topics
 │   ├── booking-service/  # deployment + service + ingress (image tickrush/booking-service)
 │   ├── payment-service/  # deployment + service + ingress (image tickrush/payment-service)
 │   └── notification-service/  # deployment + service + ingress (image tickrush/notification-service)

@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, PlayCircle, XCircle } from 'lucide-react'
 import { api } from '@/lib/api'
 import { SEED_EVENTS } from '@/lib/constants'
-import { useStore } from '@/store'
+import { useStore } from '@/store-context'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
@@ -61,16 +61,16 @@ export function FullScenario() {
   return (
     <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
       <CardHeader>
-        <CardTitle>Scénario complet</CardTitle>
+        <CardTitle>Scénario HTTP TP4</CardTitle>
         <CardDescription>
-          Réserver → payer → vérifier le statut → envoyer la confirmation, à travers les 3
+          Orchestration manuelle réserver → payer → vérifier → notifier, à travers les 3
           services et le gateway.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <Button onClick={run} disabled={running} size="lg">
           <PlayCircle className="size-4" />
-          {running ? 'Exécution…' : 'Lancer le scénario'}
+          {running ? 'Exécution…' : 'Lancer le scénario HTTP'}
         </Button>
         {steps.length > 0 && (
           <ol className="space-y-2">

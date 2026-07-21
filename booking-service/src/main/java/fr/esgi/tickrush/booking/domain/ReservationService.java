@@ -3,6 +3,9 @@ package fr.esgi.tickrush.booking.domain;
 import fr.esgi.tickrush.booking.repository.EventRepository;
 import fr.esgi.tickrush.booking.repository.ReservationRepository;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.retry.annotation.Backoff;
+import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +32,11 @@ public class ReservationService {
      * création d'une réservation PENDING avec TTL. Le tout dans une seule transaction.
      */
     @Transactional
+    @Retryable(
+            retryFor = ObjectOptimisticLockingFailureException.class,
+            maxAttempts = 8,
+            backoff = @Backoff(delay = 10, maxDelay = 200, multiplier = 2, random = true)
+    )
     public Reservation reserve(UUID eventId, String customerRef, int quantity) {
         Event event = events.findById(eventId)
                 .orElseThrow(() -> new ResourceNotFoundException("Événement", eventId));

@@ -15,6 +15,31 @@ spec:
       labels:
         app: booking-service
     spec:
+      initContainers:
+        - name: wait-for-booking-db
+          image: postgres:16-alpine
+          command:
+            - sh
+            - -c
+            - until pg_isready -h booking-db -p 5432 -U "$DB_USER" -d "$DB_NAME"; do sleep 2; done
+          env:
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: booking-db
+                  key: POSTGRES_DB
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: booking-db
+                  key: POSTGRES_USER
+          resources:
+            requests:
+              memory: 32Mi
+              cpu: 10m
+            limits:
+              memory: 64Mi
+              cpu: 100m
       containers:
         - name: booking-service
           image: tickrush/booking-service:dev

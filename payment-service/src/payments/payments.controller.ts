@@ -18,7 +18,10 @@ export class PaymentsController {
 
   /** Déclenche un paiement simulé. 201 si créé, 200 si déjà existant (idempotent). */
   @Post()
-  async create(@Body() dto: CreatePaymentDto, @Res() res: Response): Promise<void> {
+  async create(
+    @Body() dto: CreatePaymentDto,
+    @Res() res: Response,
+  ): Promise<void> {
     const { payment, created } = await this.payments.authorize(dto);
     res.status(created ? HttpStatus.CREATED : HttpStatus.OK).json(payment);
   }

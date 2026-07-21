@@ -19,6 +19,7 @@ Un dossier par composant, manifests bruts :
 | `booking-db/` | PostgreSQL du `booking-service` (secret, pvc, deployment, service) |
 | `payment-db/` | PostgreSQL du `payment-service` (secret, pvc, deployment, service) |
 | `maildev/` | faux SMTP (1025) + UI web (1080) qui capture les emails (image publique `maildev/maildev`) |
+| `kafka/` | Kafka 3.8 KRaft, Kafka UI, PVC et Job idempotent de création des topics |
 | `booking-service/` | service Java (deployment + service + **ingress** `/events` `/reservations`), image `tickrush/booking-service:dev` |
 | `payment-service/` | service Node (deployment + service + **ingress** `/payments`), image `tickrush/payment-service:dev` |
 | `notification-service/` | service Python/FastAPI (deployment + service + **ingress** `/notifications`), image `tickrush/notification-service:dev` |
@@ -36,7 +37,9 @@ Un dossier par composant, manifests bruts :
 ```bash
 docker build -t tickrush/booking-service:dev ../booking-service
 docker build -t tickrush/payment-service:dev ../payment-service
-k3d image import tickrush/booking-service:dev tickrush/payment-service:dev -c tickrush
+docker build -t tickrush/notification-service:dev ../notification-service
+k3d image import tickrush/booking-service:dev tickrush/payment-service:dev \
+  tickrush/notification-service:dev -c tickrush
 ```
 
 > Les Deployments utilisent `imagePullPolicy: IfNotPresent` : l'image importée dans k3d
@@ -49,10 +52,13 @@ k3d image import tickrush/booking-service:dev tickrush/payment-service:dev -c ti
 # 1. Cluster local (une seule fois) — Traefik est inclus dans k3s
 k3d cluster create tickrush --port "8081:80@loadbalancer" --port "8443:443@loadbalancer"
 
-# 2. Déployer PostgreSQL
+# 2. Déployer les bases et Kafka
 kubectl apply -f namespace.yaml
-kubectl apply -f booking-db/
+kubectl apply -f booking-db/ -f payment-db/ -f maildev/
+kubectl apply -k kafka/
 kubectl -n tickrush rollout status deployment/booking-db
+kubectl -n tickrush rollout status deployment/kafka
+kubectl -n tickrush wait --for=condition=complete job/kafka-init --timeout=180s
 
 # 3. Rendre la base joignable depuis le service lancé en local (mvnw)
 kubectl -n tickrush port-forward svc/booking-db 5432:5432

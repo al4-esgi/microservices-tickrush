@@ -15,8 +15,11 @@ describe('AppController', () => {
   });
 
   describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
+    it('identifies the TickRush service', () => {
+      expect(appController.getInfo()).toEqual({
+        service: 'payment-service',
+        status: 'UP',
+      });
     });
   });
 });
