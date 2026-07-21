@@ -1,10 +1,12 @@
-# Façade unique (bonus TP3) : Traefik (fourni par k3s) route par préfixe de chemin.
-# Équivaut au gateway Traefik du docker-compose du TP.
-# Exposé sur http://localhost:8081 (mapping k3d "8081:80@loadbalancer").
+# Façade Traefik du booking-service (bonus TP3).
+# k3d local → routage par PATH, sans host ni TLS (pas de DNS public / cert-manager local).
+# Accessible sur http://localhost:8081 (mapping k3d "8081:80@loadbalancer").
+# Pour un déploiement sur le lab distant : passer en host-based + cert-manager
+# (ex. host: booking.tickrush.lab.vlxx.fr, annotations letsencrypt-prod, bloc tls).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: tickrush
+  name: booking-service
   namespace: tickrush
 spec:
   ingressClassName: traefik
@@ -25,10 +27,3 @@ spec:
                 name: booking-service
                 port:
                   number: 8080
-          - path: /payments
-            pathType: Prefix
-            backend:
-              service:
-                name: payment-service
-                port:
-                  number: 3000

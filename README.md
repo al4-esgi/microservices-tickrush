@@ -74,9 +74,9 @@ docker build -t tickrush/booking-service:dev ./booking-service
 docker build -t tickrush/payment-service:dev ./payment-service
 k3d image import tickrush/booking-service:dev tickrush/payment-service:dev -c tickrush
 
-# 3. Déployer : base + 2 services + ingress
+# 3. Déployer : base + 2 services (chaque dossier de service inclut son ingress)
 kubectl apply -f k3s/namespace.yaml
-kubectl apply -f k3s/booking-db/ -f k3s/payment-service/ -f k3s/booking-service/ -f k3s/ingress.yaml
+kubectl apply -f k3s/booking-db/ -f k3s/payment-service/ -f k3s/booking-service/
 kubectl -n tickrush rollout status deployment/booking-service
 
 # 4. Appeler via la façade Traefik
@@ -177,10 +177,9 @@ microservices-tickrush/
 │   └── decoupage.md      # Event Storming (contextes, contrats)
 ├── k3s/                  # manifests Kubernetes (remplace docker-compose)
 │   ├── namespace.yaml
-│   ├── ingress.yaml      # façade Traefik (bonus)
 │   ├── booking-db/       # PostgreSQL du booking-service
-│   ├── booking-service/  # deployment + service (image tickrush/booking-service)
-│   └── payment-service/  # deployment + service (image tickrush/payment-service)
+│   ├── booking-service/  # deployment + service + ingress (image tickrush/booking-service)
+│   └── payment-service/  # deployment + service + ingress (image tickrush/payment-service)
 ├── booking-service/      # service Java — Spring Boot 3.5, JDK 21
 └── payment-service/      # service Node/TS — NestJS 11
 ```

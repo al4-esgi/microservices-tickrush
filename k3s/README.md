@@ -16,10 +16,14 @@ Un dossier par composant, manifests bruts :
 | Chemin | Rôle |
 |---|---|
 | `namespace.yaml` | namespace `tickrush` |
-| `ingress.yaml` | façade Traefik (routage par préfixe `/events` `/reservations` `/payments`) |
 | `booking-db/` | PostgreSQL du `booking-service` (secret, pvc, deployment, service) |
-| `booking-service/` | service Java (deployment + service), image `tickrush/booking-service:dev` |
-| `payment-service/` | service Node (deployment + service), image `tickrush/payment-service:dev` |
+| `booking-service/` | service Java (deployment + service + **ingress** `/events` `/reservations`), image `tickrush/booking-service:dev` |
+| `payment-service/` | service Node (deployment + service + **ingress** `/payments`), image `tickrush/payment-service:dev` |
+
+> Façade Traefik : **un `ingress.yaml` par service** (convention « un dossier par service »).
+> Traefik agrège tous les Ingress → routage identique à un fichier central. En local (k3d)
+> le routage est **par path sans TLS** ; pour le lab distant, passer en **host-based +
+> cert-manager** (voir la note en tête de `booking-service/ingress.yaml`).
 
 > **Une base par service** : `payment-service` est en mémoire pour l'instant ; sa base
 > PostgreSQL dédiée viendra en travail personnel.
