@@ -37,7 +37,7 @@ forte charge, et ne jamais dupliquer ni perdre un paiement.
 |---|---|---|
 | `booking-service` | Java / Spring Boot 3.5 (JDK 21) | Réservation, stock (verrou optimiste), TTL, appel protégé vers paiement |
 | `payment-service` | Node.js / TypeScript (NestJS 11) | Paiement simulé **idempotent** et **persisté** (PostgreSQL/TypeORM) |
-| `notification-service` | _au choix_ | Confirmation par email simulé — _bonus_ |
+| `notification-service` | Python / FastAPI | Confirmation par « email » (capté par **MailDev**) — _bonus, 3ᵉ langage_ |
 
 **Endpoints REST** (détails dans [docs/decoupage.md](docs/decoupage.md)) :
 - booking : `POST /reservations`, `GET /reservations/{id}`, `GET /reservations/{id}/payment-status`, `GET /events/{id}`
@@ -72,17 +72,25 @@ k3d cluster create tickrush --port "8081:80@loadbalancer" --port "8443:443@loadb
 # 2. Construire et importer les images (pas de registry)
 docker build -t tickrush/booking-service:dev ./booking-service
 docker build -t tickrush/payment-service:dev ./payment-service
-k3d image import tickrush/booking-service:dev tickrush/payment-service:dev -c tickrush
+docker build -t tickrush/notification-service:dev ./notification-service
+k3d image import tickrush/booking-service:dev tickrush/payment-service:dev \
+  tickrush/notification-service:dev -c tickrush
 
-# 3. Déployer : base + 2 services (chaque dossier de service inclut son ingress)
+# 3. Déployer : bases + 3 services + MailDev (chaque dossier de service inclut son ingress)
 kubectl apply -f k3s/namespace.yaml
-kubectl apply -f k3s/booking-db/ -f k3s/payment-db/ -f k3s/payment-service/ -f k3s/booking-service/
+kubectl apply -f k3s/booking-db/ -f k3s/payment-db/ -f k3s/maildev/ \
+  -f k3s/payment-service/ -f k3s/booking-service/ -f k3s/notification-service/
 kubectl -n tickrush rollout status deployment/booking-service
 
 # 4. Appeler via la façade Traefik
 curl localhost:8081/events/11111111-1111-1111-1111-111111111111   # booking
 curl -X POST localhost:8081/payments -H 'Content-Type: application/json' \
   -d '{"reservationId":"<uuid>","amount":42}'                     # payment
+curl -X POST localhost:8081/notifications/ticket-issued -H 'Content-Type: application/json' \
+  -d '{"to":"a@b.c","reservationId":"<uuid>","eventName":"Concert","quantity":2}'  # email
+
+# Consulter les mails capturés (UI web MailDev)
+kubectl -n tickrush port-forward svc/maildev 1080:1080   # → http://localhost:1080
 ```
 
 ## Lancement en développement local — booking-service
@@ -179,8 +187,11 @@ microservices-tickrush/
 │   ├── namespace.yaml
 │   ├── booking-db/       # PostgreSQL du booking-service
 │   ├── payment-db/       # PostgreSQL du payment-service
+│   ├── maildev/          # faux SMTP + UI web (capture les emails)
 │   ├── booking-service/  # deployment + service + ingress (image tickrush/booking-service)
-│   └── payment-service/  # deployment + service + ingress (image tickrush/payment-service)
+│   ├── payment-service/  # deployment + service + ingress (image tickrush/payment-service)
+│   └── notification-service/  # deployment + service + ingress (image tickrush/notification-service)
 ├── booking-service/      # service Java — Spring Boot 3.5, JDK 21
-└── payment-service/      # service Node/TS — NestJS 11
+├── payment-service/      # service Node/TS — NestJS 11
+└── notification-service/ # service Python — FastAPI (envoi email via MailDev)
 ```

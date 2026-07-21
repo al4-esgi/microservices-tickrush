@@ -18,8 +18,10 @@ Un dossier par composant, manifests bruts :
 | `namespace.yaml` | namespace `tickrush` |
 | `booking-db/` | PostgreSQL du `booking-service` (secret, pvc, deployment, service) |
 | `payment-db/` | PostgreSQL du `payment-service` (secret, pvc, deployment, service) |
+| `maildev/` | faux SMTP (1025) + UI web (1080) qui capture les emails (image publique `maildev/maildev`) |
 | `booking-service/` | service Java (deployment + service + **ingress** `/events` `/reservations`), image `tickrush/booking-service:dev` |
 | `payment-service/` | service Node (deployment + service + **ingress** `/payments`), image `tickrush/payment-service:dev` |
+| `notification-service/` | service Python/FastAPI (deployment + service + **ingress** `/notifications`), image `tickrush/notification-service:dev` |
 
 > Façade Traefik : **un `ingress.yaml` par service** (convention « un dossier par service »).
 > Traefik agrège tous les Ingress → routage identique à un fichier central. En local (k3d)

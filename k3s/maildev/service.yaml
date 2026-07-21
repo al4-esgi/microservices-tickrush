@@ -1,0 +1,17 @@
+# Deux ports : SMTP (les services envoient leurs mails ici) + web (consultation).
+apiVersion: v1
+kind: Service
+metadata:
+  name: maildev
+  namespace: tickrush
+spec:
+  selector:
+    app: maildev
+  ports:
+    - name: web
+      port: 1080
+      targetPort: 1080
+    - name: smtp
+      port: 1025
+      targetPort: 1025
+  type: ClusterIP

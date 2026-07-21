@@ -1,0 +1,18 @@
+# Façade Traefik du notification-service (routage par path, k3d local).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: notification-service
+  namespace: tickrush
+spec:
+  ingressClassName: traefik
+  rules:
+    - http:
+        paths:
+          - path: /notifications
+            pathType: Prefix
+            backend:
+              service:
+                name: notification-service
+                port:
+                  number: 8000

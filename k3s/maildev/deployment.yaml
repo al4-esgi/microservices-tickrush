@@ -1,0 +1,40 @@
+# MailDev : faux serveur SMTP (1025) + interface web (1080) qui capture les emails
+# sortants sans jamais les envoyer réellement. Sert de "boîte de réception" de démo.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: maildev
+  namespace: tickrush
+  labels:
+    app: maildev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: maildev
+  template:
+    metadata:
+      labels:
+        app: maildev
+    spec:
+      containers:
+        - name: maildev
+          image: maildev/maildev:2.1.0
+          ports:
+            - name: web
+              containerPort: 1080
+            - name: smtp
+              containerPort: 1025
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 1080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "192Mi"
+              cpu: "300m"
