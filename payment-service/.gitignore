@@ -1,0 +1,17 @@
+# compiled output
+/dist
+/node_modules
+
+# logs
+*.log
+logs
+
+# tests / coverage
+/coverage
+
+# env
+.env
+
+# OS / IDE
+.DS_Store
+/.idea
