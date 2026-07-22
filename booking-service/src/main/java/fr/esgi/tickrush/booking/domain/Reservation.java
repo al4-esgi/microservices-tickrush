@@ -7,6 +7,8 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
@@ -32,6 +34,22 @@ public class Reservation {
     @Column(nullable = false)
     private int quantity;
 
+    @Column(
+            nullable = false,
+            precision = 10,
+            scale = 2,
+            columnDefinition = "numeric(10,2) default 0.00"
+    )
+    private BigDecimal unitPrice;
+
+    @Column(
+            nullable = false,
+            precision = 12,
+            scale = 2,
+            columnDefinition = "numeric(12,2) default 0.00"
+    )
+    private BigDecimal amount;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private ReservationStatus status;
@@ -47,16 +65,33 @@ public class Reservation {
     }
 
     /** Fabrique une réservation PENDING avec échéance = maintenant + TTL. */
-    public static Reservation open(UUID eventId, String customerRef, int quantity, Duration ttl) {
+    public static Reservation open(UUID eventId,
+                                   String customerRef,
+                                   int quantity,
+                                   BigDecimal unitPrice,
+                                   Duration ttl) {
         Reservation r = new Reservation();
         r.id = UUID.randomUUID();
         r.eventId = eventId;
         r.customerRef = customerRef;
         r.quantity = quantity;
+        r.unitPrice = unitPrice.setScale(2, RoundingMode.HALF_UP);
+        r.amount = r.unitPrice.multiply(BigDecimal.valueOf(quantity))
+                .setScale(2, RoundingMode.HALF_UP);
         r.status = ReservationStatus.PENDING;
         r.createdAt = Instant.now();
         r.expiresAt = r.createdAt.plus(ttl);
         return r;
+    }
+
+    public void markPaid() {
+        if (status == ReservationStatus.PAID) {
+            return;
+        }
+        if (status != ReservationStatus.PENDING) {
+            throw new IllegalStateException("Une reservation " + status + " ne peut pas etre payee");
+        }
+        status = ReservationStatus.PAID;
     }
 
     public UUID getId() {
@@ -73,6 +108,14 @@ public class Reservation {
 
     public int getQuantity() {
         return quantity;
+    }
+
+    public BigDecimal getUnitPrice() {
+        return unitPrice;
+    }
+
+    public BigDecimal getAmount() {
+        return amount;
     }
 
     public ReservationStatus getStatus() {

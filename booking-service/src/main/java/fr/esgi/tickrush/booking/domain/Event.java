@@ -6,6 +6,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.UUID;
 
 /**
@@ -30,6 +32,14 @@ public class Event {
     @Column(nullable = false)
     private int availableSeats;
 
+    @Column(
+            nullable = false,
+            precision = 10,
+            scale = 2,
+            columnDefinition = "numeric(10,2) default 0.00"
+    )
+    private BigDecimal unitPrice;
+
     @Version
     private long version;
 
@@ -37,11 +47,12 @@ public class Event {
         // requis par JPA
     }
 
-    public Event(UUID id, String name, int totalSeats) {
+    public Event(UUID id, String name, int totalSeats, BigDecimal unitPrice) {
         this.id = id;
         this.name = name;
         this.totalSeats = totalSeats;
         this.availableSeats = totalSeats;
+        changeUnitPrice(unitPrice);
     }
 
     /** Décrémente le stock de façon sûre, ou lève {@link InsufficientSeatsException}. */
@@ -55,6 +66,13 @@ public class Event {
     /** Remet des places en vente (expiration ou annulation), sans dépasser le total. */
     public void release(int quantity) {
         availableSeats = Math.min(totalSeats, availableSeats + quantity);
+    }
+
+    public void changeUnitPrice(BigDecimal unitPrice) {
+        if (unitPrice == null || unitPrice.signum() <= 0) {
+            throw new IllegalArgumentException("Le prix unitaire doit etre strictement positif");
+        }
+        this.unitPrice = unitPrice.setScale(2, RoundingMode.HALF_UP);
     }
 
     public UUID getId() {
@@ -71,6 +89,10 @@ public class Event {
 
     public int getAvailableSeats() {
         return availableSeats;
+    }
+
+    public BigDecimal getUnitPrice() {
+        return unitPrice;
     }
 
     public long getVersion() {

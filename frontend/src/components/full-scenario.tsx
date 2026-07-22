@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, PlayCircle, XCircle } from 'lucide-react'
 import { api } from '@/lib/api'
 import { SEED_EVENTS } from '@/lib/constants'
@@ -15,7 +14,6 @@ interface Step {
 
 export function FullScenario() {
   const { setReservationId } = useStore()
-  const qc = useQueryClient()
   const [steps, setSteps] = useState<Step[]>([])
   const [running, setRunning] = useState(false)
 
@@ -33,44 +31,53 @@ export function FullScenario() {
       customerRef: 'demo@esgi.fr',
       quantity: 1,
     })
-    const res = reservation.data as { id?: string; status?: string }
+    const res = reservation.data
     const rid = res?.id ?? ''
     if (rid) setReservationId(rid)
     push('Réservation créée', reservation.ok, rid ? `${rid.slice(0, 8)}… · ${res.status}` : `HTTP ${reservation.status}`)
+    if (!reservation.ok || !rid) {
+      setRunning(false)
+      return
+    }
 
-    const payment = await api.createPayment({ reservationId: rid, amount: 42 })
-    const pay = payment.data as { status?: string }
-    push('Paiement encaissé', payment.ok, `HTTP ${payment.status} · ${pay?.status ?? ''}`)
+    let paid = false
+    let current = res
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const followed = await api.getReservation(rid)
+      current = followed.data
+      if (followed.ok && current.status === 'PAID') {
+        paid = true
+        break
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500))
+    }
+    push(
+      'Pipeline Kafka terminé',
+      paid,
+      paid
+        ? `SeatReserved → PaymentReceived · ${current.amount.toFixed(2)} €`
+        : 'Délai dépassé',
+    )
 
     const status = await api.paymentStatus(rid)
     const st = status.data as { paymentStatus?: string }
     push('Statut paiement (circuit breaker)', status.ok, st?.paymentStatus ?? String(status.data))
 
-    const notify = await api.notify({
-      to: 'demo@esgi.fr',
-      reservationId: rid,
-      eventName: 'Concert Metallica',
-      quantity: 1,
-    })
-    push('Email de confirmation envoyé', notify.ok, `HTTP ${notify.status}`)
-
-    qc.invalidateQueries({ queryKey: ['emails'] })
     setRunning(false)
   }
 
   return (
     <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
       <CardHeader>
-        <CardTitle>Scénario HTTP TP4</CardTitle>
+        <CardTitle>Pipeline événementiel TP5</CardTitle>
         <CardDescription>
-          Orchestration manuelle réserver → payer → vérifier → notifier, à travers les 3
-          services et le gateway.
+          Réserver via HTTP, puis laisser Kafka déclencher le paiement et confirmer l'état.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <Button onClick={run} disabled={running} size="lg">
           <PlayCircle className="size-4" />
-          {running ? 'Exécution…' : 'Lancer le scénario HTTP'}
+          {running ? 'Exécution…' : 'Lancer le pipeline'}
         </Button>
         {steps.length > 0 && (
           <ol className="space-y-2">

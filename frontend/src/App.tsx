@@ -32,7 +32,7 @@ export default function App() {
         </TabsContent>
       </Tabs>
       <footer className="pt-4 text-center text-xs text-muted-foreground">
-        TickRush · ESGI 4AL · k3d + Traefik · flux Kafka à venir (TP4)
+        TickRush · ESGI 4AL · k3d + Traefik · pipeline Kafka polyglotte (TP5)
       </footer>
     </div>
   )

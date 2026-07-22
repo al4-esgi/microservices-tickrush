@@ -13,6 +13,32 @@ spring:
       hibernate:
         jdbc:
           time_zone: UTC
+  kafka:
+    bootstrap-servers: ${KAFKA_URL:localhost:9092}
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        allow.auto.create.topics: false
+        enable.idempotence: true
+    consumer:
+      group-id: booking-service
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      properties:
+        allow.auto.create.topics: false
+    listener:
+      ack-mode: record
+
+tickrush:
+  kafka:
+    enabled: ${KAFKA_ENABLED:true}
+    topics:
+      seat-reserved: booking.seat-reserved
+      payment-received: payment.received
 
 management:
   endpoints:

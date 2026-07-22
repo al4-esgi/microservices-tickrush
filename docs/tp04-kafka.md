@@ -22,7 +22,7 @@ initiale au bootstrap réussit mais les échanges suivants échouent.
 
 | Topic | Clé | Ordre garanti pour |
 |---|---|---|
-| `booking.seat-reserved` | `eventId` | le stock d'un événement |
+| `booking.seat-reserved` | `reservationId` | le cycle de vie d'une réservation (choix final TP5) |
 | `booking.reservation-expired` | `reservationId` | une réservation |
 | `booking.seat-released` | `eventId` | le stock d'un événement |
 | `booking.ticket-issued` | `reservationId` | une réservation |
@@ -46,8 +46,9 @@ task kafka:consume:partition
 task kafka:lag-demo
 ```
 
-`task kafka:produce-demo` écrit 10 messages avec 3 `eventId`. Le consumer affiche la
-clé, la partition et l'offset. Tous les messages portant la même clé arrivent dans la même
+`task kafka:produce-demo` écrit 10 sondes sans effet métier avec 3 `reservationId`. Leur
+`eventType=PartitionProbe` est volontairement ignoré par le consumer applicatif du TP5.
+Le consumer CLI affiche la clé, la partition et l'offset. Tous les messages portant la même clé arrivent dans la même
 partition et leurs offsets augmentent : l'ordre est garanti dans une partition, pas entre
 toutes les partitions. Relancer `task kafka:consume-demo` relit les mêmes messages depuis
 l'offset 0; consommer ne les détruit pas.
@@ -84,8 +85,9 @@ La mesure observée était `CURRENT-OFFSET=3`, `LOG-END-OFFSET=7`, `LAG=4` sur l
 et `LAG=3` sur la partition 2, soit un lag total de 7. Le lag est la métrique principale pour
 détecter un consommateur arrêté ou trop lent.
 
-## Limite volontaire du TP04
+## Limite au terme du TP04
 
-Les messages sont produits et consommés avec les outils CLI Kafka. Les producteurs applicatifs,
-l'Outbox, les consumers idempotents, l'expiration automatique et l'émission du billet sont le
-périmètre du TP5 et des séances suivantes.
+À la fin du TP04, les messages étaient produits et consommés uniquement avec les outils CLI.
+Les producteurs applicatifs, le consumer idempotent et les dead-letter topics ont depuis été
+ajoutés au TP05. L'Outbox, l'expiration automatique et l'émission du billet restent destinées
+aux séances suivantes.

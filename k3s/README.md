@@ -19,7 +19,7 @@ Un dossier par composant, manifests bruts :
 | `booking-db/` | PostgreSQL du `booking-service` (secret, pvc, deployment, service) |
 | `payment-db/` | PostgreSQL du `payment-service` (secret, pvc, deployment, service) |
 | `maildev/` | faux SMTP (1025) + UI web (1080) qui capture les emails (image publique `maildev/maildev`) |
-| `kafka/` | Kafka 3.8 KRaft, Kafka UI, PVC et Job idempotent de création des topics |
+| `kafka/` | Kafka 3.8 KRaft, Kafka UI, PVC et Job idempotent de création des topics métier + DLQ/DLT |
 | `booking-service/` | service Java (deployment + service + **ingress** `/events` `/reservations`), image `tickrush/booking-service:dev` |
 | `payment-service/` | service Node (deployment + service + **ingress** `/payments`), image `tickrush/payment-service:dev` |
 | `notification-service/` | service Python/FastAPI (deployment + service + **ingress** `/notifications`), image `tickrush/notification-service:dev` |

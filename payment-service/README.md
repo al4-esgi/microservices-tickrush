@@ -15,6 +15,15 @@ Le taux de refus est configurable avec `PAYMENT_FAILURE_RATE` entre 0 et 1. L'id
 reste garantie sous concurrence : une violation PostgreSQL `23505` provoque la relecture du
 paiement créé par la requête gagnante.
 
+Depuis le TP05, le service consomme `booking.seat-reserved` avec KafkaJS, appelle la même
+logique métier que l'endpoint REST puis publie `payment.received` ou `payment.rejected` avec
+la clé `reservationId`. `PAYMENT_REJECTION_THRESHOLD` vaut `100` dans k3s : une place à
+`49.90 EUR` est acceptée, trois places à `149.70 EUR` sont refusées de façon déterministe.
+
+Un message invalide est traité trois fois avec backoff puis copié, avec ses headers d'erreur,
+dans `booking.seat-reserved.DLQ`. Le consumer retourne ensuite normalement afin de ne pas
+bloquer la partition.
+
 ## Développement
 
 ```bash

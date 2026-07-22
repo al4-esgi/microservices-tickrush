@@ -1,4 +1,4 @@
-import type { ApiResult, Email } from './types'
+import type { ApiResult, Email, EventDto, ReservationDto } from './types'
 
 // Toutes les requêtes passent par le proxy Vite :
 //   /api/*         -> gateway Traefik (localhost:8081) -> services
@@ -45,9 +45,10 @@ export interface NotifyInput {
 }
 
 export const api = {
-  getEvent: (id: string) => request('GET', `/events/${id}`),
-  createReservation: (b: CreateReservationInput) => request('POST', '/reservations', b),
-  getReservation: (id: string) => request('GET', `/reservations/${id}`),
+  getEvent: (id: string) => request<EventDto>('GET', `/events/${id}`),
+  createReservation: (b: CreateReservationInput) =>
+    request<ReservationDto>('POST', '/reservations', b),
+  getReservation: (id: string) => request<ReservationDto>('GET', `/reservations/${id}`),
   paymentStatus: (id: string) => request('GET', `/reservations/${id}/payment-status`),
   createPayment: (b: CreatePaymentInput) => request('POST', '/payments', b),
   notify: (b: NotifyInput) => request('POST', '/notifications/ticket-issued', b),

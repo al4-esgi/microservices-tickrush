@@ -70,6 +70,10 @@ spec:
             # Appel inter-services via le DNS de Service (aucune IP en dur)
             - name: PAYMENT_URL
               value: http://payment-service:3000
+            - name: KAFKA_URL
+              value: kafka:29092
+            - name: KAFKA_ENABLED
+              value: "true"
           readinessProbe:
             httpGet:
               path: /actuator/health

@@ -3,6 +3,7 @@ package fr.esgi.tickrush.booking.web.dto;
 import fr.esgi.tickrush.booking.domain.Reservation;
 import fr.esgi.tickrush.booking.domain.ReservationStatus;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -11,6 +12,8 @@ public record ReservationResponse(
         UUID eventId,
         String customerRef,
         int quantity,
+        BigDecimal unitPrice,
+        BigDecimal amount,
         ReservationStatus status,
         Instant expiresAt,
         Instant createdAt
@@ -18,6 +21,7 @@ public record ReservationResponse(
     public static ReservationResponse from(Reservation r) {
         return new ReservationResponse(
                 r.getId(), r.getEventId(), r.getCustomerRef(), r.getQuantity(),
+                r.getUnitPrice(), r.getAmount(),
                 r.getStatus(), r.getExpiresAt(), r.getCreatedAt());
     }
 }

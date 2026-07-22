@@ -11,7 +11,7 @@ const PG_UNIQUE_VIOLATION = '23505';
  * Idempotent : rejouer un paiement pour la même réservation renvoie l'existant.
  * L'unicité de `reservationId` en base garantit l'idempotence même sous concurrence
  * (deux requêtes simultanées → une seule insertion, l'autre récupère l'existante).
- * Taux d'échec configurable via PAYMENT_FAILURE_RATE (0..1, défaut 0 = toujours accepté).
+ * Échec contrôlable par seuil de montant, complété par un taux aléatoire optionnel.
  */
 @Injectable()
 export class PaymentsService {
@@ -31,8 +31,13 @@ export class PaymentsService {
     }
 
     const failureRate = Number(process.env.PAYMENT_FAILURE_RATE ?? '0');
+    const rejectionThreshold = Number(
+      process.env.PAYMENT_REJECTION_THRESHOLD ?? '100',
+    );
     const status: PaymentStatus =
-      Math.random() < failureRate ? 'REJECTED' : 'RECEIVED';
+      dto.amount > rejectionThreshold || Math.random() < failureRate
+        ? 'REJECTED'
+        : 'RECEIVED';
 
     const entity = this.repo.create({
       reservationId: dto.reservationId,

@@ -2,7 +2,11 @@ package fr.esgi.tickrush.booking.domain;
 
 import fr.esgi.tickrush.booking.repository.EventRepository;
 import fr.esgi.tickrush.booking.repository.ReservationRepository;
+import fr.esgi.tickrush.booking.messaging.EventEnvelope;
+import fr.esgi.tickrush.booking.messaging.SeatReservedApplicationEvent;
+import fr.esgi.tickrush.booking.messaging.SeatReservedPayload;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.retry.annotation.Backoff;
 import org.springframework.retry.annotation.Retryable;
@@ -17,13 +21,16 @@ public class ReservationService {
 
     private final EventRepository events;
     private final ReservationRepository reservations;
+    private final ApplicationEventPublisher applicationEvents;
     private final Duration ttl;
 
     public ReservationService(EventRepository events,
                               ReservationRepository reservations,
+                              ApplicationEventPublisher applicationEvents,
                               @Value("${reservation.ttl-seconds:120}") long ttlSeconds) {
         this.events = events;
         this.reservations = reservations;
+        this.applicationEvents = applicationEvents;
         this.ttl = Duration.ofSeconds(ttlSeconds);
     }
 
@@ -42,7 +49,19 @@ public class ReservationService {
                 .orElseThrow(() -> new ResourceNotFoundException("Événement", eventId));
         event.reserve(quantity);              // lève InsufficientSeatsException si stock KO
         events.save(event);
-        return reservations.save(Reservation.open(eventId, customerRef, quantity, ttl));
+        Reservation reservation = reservations.save(
+                Reservation.open(eventId, customerRef, quantity, event.getUnitPrice(), ttl));
+        SeatReservedPayload payload = new SeatReservedPayload(
+                reservation.getId(),
+                reservation.getEventId(),
+                reservation.getCustomerRef(),
+                reservation.getQuantity(),
+                reservation.getUnitPrice(),
+                reservation.getAmount()
+        );
+        applicationEvents.publishEvent(new SeatReservedApplicationEvent(
+                EventEnvelope.create("SeatReserved", reservation.getId(), payload)));
+        return reservation;
     }
 
     @Transactional(readOnly = true)

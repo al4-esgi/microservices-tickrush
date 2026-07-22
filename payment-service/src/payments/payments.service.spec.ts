@@ -29,6 +29,7 @@ describe('PaymentsService', () => {
   beforeEach(() => {
     jest.restoreAllMocks();
     process.env.PAYMENT_FAILURE_RATE = '0';
+    process.env.PAYMENT_REJECTION_THRESHOLD = '100';
     repo = {
       findOne: jest.fn(),
       findOneByOrFail: jest.fn(),
@@ -40,6 +41,7 @@ describe('PaymentsService', () => {
 
   afterAll(() => {
     delete process.env.PAYMENT_FAILURE_RATE;
+    delete process.env.PAYMENT_REJECTION_THRESHOLD;
   });
 
   it('returns the existing payment without creating a duplicate', async () => {
@@ -99,6 +101,26 @@ describe('PaymentsService', () => {
     const result = await service.authorize(dto);
 
     expect(result.payment.status).toBe('REJECTED');
+  });
+
+  it('rejects a payment above the configured amount threshold', async () => {
+    const expensiveDto = { ...dto, amount: 149.7 };
+    const rejected: PaymentEntity = {
+      ...payment,
+      amount: expensiveDto.amount,
+      status: 'REJECTED',
+    };
+    repo.findOne.mockResolvedValue(null);
+    repo.create.mockReturnValue(rejected);
+    repo.save.mockResolvedValue(rejected);
+
+    await service.authorize(expensiveDto);
+
+    expect(repo.create).toHaveBeenCalledWith({
+      reservationId: expensiveDto.reservationId,
+      amount: 149.7,
+      status: 'REJECTED',
+    });
   });
 
   it('returns NONE when no payment exists', async () => {

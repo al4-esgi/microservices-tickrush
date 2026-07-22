@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import java.util.ArrayList;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -44,7 +45,7 @@ class ReservationConcurrencyIntegrationTests {
     @Test
     void concurrentRequestsNeverOversellAndUseAllAvailableSeats() throws Exception {
         UUID eventId = UUID.randomUUID();
-        events.saveAndFlush(new Event(eventId, "Concert concurrent", 3));
+        events.saveAndFlush(new Event(eventId, "Concert concurrent", 3, new BigDecimal("25.00")));
 
         int requestCount = 6;
         ExecutorService executor = Executors.newFixedThreadPool(requestCount);

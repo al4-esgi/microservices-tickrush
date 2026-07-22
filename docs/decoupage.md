@@ -46,8 +46,10 @@ les endpoints REST et les topics Kafka créés au TP4.
 
 - **Agrégats** :
   - `Événement` — porte le **stock** (places totales / disponibles). Cœur de la
-    contrainte « ne jamais survendre » → protégé par **verrou optimiste**.
+    contrainte « ne jamais survendre » → protégé par **verrou optimiste**. Il définit aussi
+    le prix unitaire courant d'une place.
   - `Réservation` — cycle de vie `PENDING → PAID | EXPIRED | CANCELLED`, avec **TTL**.
+    Elle fige le prix unitaire et le montant `unitPrice × quantity` au moment de la vente.
 - **Événements émis** : PlacesRéservées, RéservationRefusée, RéservationExpirée,
   PlacesLibérées, BilletÉmis, RéservationAnnulée.
 - **Événements consommés** : PaiementReçu, PaiementRefusé.
@@ -82,20 +84,45 @@ asynchrones (Kafka). ≤ 3 interactions synchrones ⇒ frontière saine, on ne f
 | payment-service | `POST /payments`                          | déclencher un paiement simulé           |
 | payment-service | `GET /payments/by-reservation/{id}/status`| statut d'un paiement (cible du CB, TP3) |
 
-### Événements (asynchrone - topics créés au TP4, intégration applicative au TP5)
+### Enveloppe polyglotte (TP5)
+
+Tous les messages utilisent le même contrat de transport :
+
+```json
+{
+  "eventId": "UUID unique du fait",
+  "eventType": "SeatReserved",
+  "occurredAt": "2026-07-22T08:00:00Z",
+  "aggregateId": "UUID de la réservation",
+  "payload": {}
+}
+```
+
+- `eventId` est la clé de déduplication du consommateur ;
+- `eventType` permet d'ignorer sans erreur les futurs types inconnus ;
+- `occurredAt` décrit l'instant métier indépendamment de Kafka ;
+- `aggregateId` vaut ici `reservationId` et constitue aussi la **clé Kafka** ;
+- `payload` porte les données propres au fait, dont l'`eventId` métier du concert ou match.
+
+### Événements (asynchrone)
 
 | Événement          | Topic                         | Clé Kafka       | Émetteur        | Consommateur(s) prévu(s)         |
 |--------------------|-------------------------------|-----------------|-----------------|----------------------------------|
-| PlacesRéservées    | `booking.seat-reserved`       | `eventId`       | booking-service | payment-service, notification    |
+| PlacesRéservées    | `booking.seat-reserved`       | `reservationId` | booking-service | payment-service                  |
 | RéservationExpirée | `booking.reservation-expired` | `reservationId` | booking-service | payment-service, notification    |
 | PlacesLibérées     | `booking.seat-released`       | `eventId`       | booking-service | projection stock                 |
 | BilletÉmis         | `booking.ticket-issued`       | `reservationId` | booking-service | notification-service             |
 | PaiementReçu       | `payment.received`            | `reservationId` | payment-service | booking-service                  |
 | PaiementRefusé     | `payment.rejected`            | `reservationId` | payment-service | booking-service                  |
 
-La clé `reservationId` conserve l'ordre du cycle de vie d'une réservation et fournit la
-base de l'idempotence des consommateurs. Les événements qui modifient le stock
-(`booking.seat-reserved` et `booking.seat-released`) utilisent `eventId`, car l'ordre qui
-compte pour cette projection est celui des mutations du stock d'un événement.
+La clé `reservationId`, égale à l'`aggregateId`, conserve l'ordre du cycle de vie de chaque
+réservation et permet à `SeatReserved` puis `PaymentReceived` de rester corrélés. Le payload
+de `SeatReserved` conserve séparément l'`eventId` métier, `quantity`, `unitPrice` et `amount`.
+Les futurs événements de projection du stock (`booking.seat-released`) restent partitionnés
+par `eventId`, car leur ordre pertinent est celui des mutations d'un même événement.
 Tous les topics ont 3 partitions et un facteur de réplication de 1 dans le cluster local
 mono-broker du TP4.
+
+Les erreurs épuisant leurs trois tentatives sont isolées dans des topics explicites :
+`booking.seat-reserved.DLQ` côté Node et `payment.received.DLT` côté Java. Ils possèdent aussi
+3 partitions afin de conserver la partition d'origine lors de la republication.

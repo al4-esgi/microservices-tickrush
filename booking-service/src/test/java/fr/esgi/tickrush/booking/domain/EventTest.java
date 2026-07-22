@@ -2,6 +2,7 @@ package fr.esgi.tickrush.booking.domain;
 
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -13,7 +14,7 @@ class EventTest {
 
     @Test
     void reserveDecrementsAvailableSeats() {
-        Event event = new Event(EVENT_ID, "Concert", 10);
+        Event event = new Event(EVENT_ID, "Concert", 10, new BigDecimal("49.90"));
 
         event.reserve(3);
 
@@ -22,7 +23,7 @@ class EventTest {
 
     @Test
     void reserveRejectsAnInsufficientStockWithoutChangingIt() {
-        Event event = new Event(EVENT_ID, "Concert", 2);
+        Event event = new Event(EVENT_ID, "Concert", 2, new BigDecimal("49.90"));
 
         assertThatThrownBy(() -> event.reserve(3))
                 .isInstanceOf(InsufficientSeatsException.class)
@@ -32,11 +33,18 @@ class EventTest {
 
     @Test
     void releaseNeverExceedsTheTotalStock() {
-        Event event = new Event(EVENT_ID, "Concert", 5);
+        Event event = new Event(EVENT_ID, "Concert", 5, new BigDecimal("49.90"));
         event.reserve(4);
 
         event.release(10);
 
         assertThat(event.getAvailableSeats()).isEqualTo(5);
+    }
+
+    @Test
+    void exposesTheConfiguredUnitPriceAtTwoDecimals() {
+        Event event = new Event(EVENT_ID, "Concert", 5, new BigDecimal("49.9"));
+
+        assertThat(event.getUnitPrice()).isEqualByComparingTo("49.90");
     }
 }

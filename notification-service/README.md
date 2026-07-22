@@ -24,8 +24,8 @@ Payload :
 | `SMTP_PORT` | `1025` | port SMTP de MailDev |
 | `MAIL_FROM` | `noreply@tickrush.local` | expéditeur |
 
-## Évolution prévue (TP4)
+## Évolution prévue (TP6)
 
-Le déclenchement HTTP est provisoire. À l'arrivée de Kafka, ce service deviendra un
+Le déclenchement HTTP est provisoire. Lors de la finalisation de la saga, ce service deviendra un
 **consumer** des topics `booking.ticket-issued` / `booking.reservation-expired`
 (`aiokafka`), réutilisant la même fonction `send_email`.

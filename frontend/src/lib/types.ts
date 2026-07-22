@@ -5,6 +5,7 @@ export interface EventDto {
   name: string
   totalSeats: number
   availableSeats: number
+  unitPrice: number
 }
 
 export interface ReservationDto {
@@ -12,6 +13,8 @@ export interface ReservationDto {
   eventId: string
   customerRef: string
   quantity: number
+  unitPrice: number
+  amount: number
   status: ReservationStatus
   expiresAt: string
   createdAt: string

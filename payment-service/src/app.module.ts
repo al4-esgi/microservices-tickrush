@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { HealthController } from './health/health.controller';
+import { KafkaMessagingModule } from './messaging/kafka-messaging.module';
 import { PaymentEntity } from './payments/payment.entity';
 import { PaymentsModule } from './payments/payments.module';
 
@@ -19,6 +20,7 @@ import { PaymentsModule } from './payments/payments.module';
       synchronize: true, // acceptable pour le TP ; en prod : migrations
     }),
     PaymentsModule,
+    KafkaMessagingModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],

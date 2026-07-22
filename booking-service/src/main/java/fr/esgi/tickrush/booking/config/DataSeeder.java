@@ -6,7 +6,7 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.util.List;
+import java.math.BigDecimal;
 import java.util.UUID;
 
 /**
@@ -22,13 +22,18 @@ public class DataSeeder {
     @Bean
     CommandLineRunner seedEvents(EventRepository events) {
         return args -> {
-            if (events.count() > 0) {
-                return;
-            }
-            events.saveAll(List.of(
-                    new Event(CONCERT_ID, "Concert Metallica - AccorArena", 100),
-                    new Event(MATCH_ID, "PSG - OM (tribune limitee)", 5)
-            ));
+            seed(events, CONCERT_ID, "Concert Metallica - AccorArena", 100, "49.90");
+            seed(events, MATCH_ID, "PSG - OM (tribune limitee)", 5, "79.90");
         };
+    }
+
+    private void seed(EventRepository events, UUID id, String name, int seats, String unitPrice) {
+        BigDecimal price = new BigDecimal(unitPrice);
+        events.findById(id).ifPresentOrElse(existing -> {
+            if (existing.getUnitPrice() == null || existing.getUnitPrice().signum() <= 0) {
+                existing.changeUnitPrice(price);
+                events.save(existing);
+            }
+        }, () -> events.save(new Event(id, name, seats, price)));
     }
 }

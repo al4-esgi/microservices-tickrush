@@ -35,38 +35,42 @@ forte charge, et ne jamais dupliquer ni perdre un paiement.
 
 | Service | Langage | Rôle |
 |---|---|---|
-| `booking-service` | Java / Spring Boot 3.5 (JDK 21) | Réservation, stock (verrou optimiste), TTL, appel protégé vers paiement |
-| `payment-service` | Node.js / TypeScript (NestJS 11) | Paiement simulé **idempotent** et **persisté** (PostgreSQL/TypeORM) |
+| `booking-service` | Java / Spring Boot 3.5 (JDK 21) | Réservation, stock, producer `SeatReserved`, consumer idempotent `PaymentReceived` |
+| `payment-service` | Node.js / TypeScript (NestJS 11) | Consumer `SeatReserved`, paiement persistant, producer du résultat, DLQ |
 | `notification-service` | Python / FastAPI | Confirmation par « email » (capté par **MailDev**) — _bonus, 3ᵉ langage_ |
 
 **Endpoints REST** (détails dans [docs/decoupage.md](docs/decoupage.md)) :
 - booking : `POST /reservations`, `GET /reservations/{id}`, `GET /reservations/{id}/payment-status`, `GET /events/{id}`
 - payment : `POST /payments`, `GET /payments/by-reservation/{id}/status`
 
-**Communication inter-services** : `booking-service` → `payment-service` en HTTP synchrone
-via le **DNS de Service Kubernetes** (`http://payment-service:3000`, aucune IP en dur),
-protégé par **timeout + circuit breaker** (Resilience4j). L'infrastructure **Kafka KRaft**,
-Kafka UI et les topics explicites sont opérationnels depuis le TP4. Le branchement des
-producteurs/consommateurs applicatifs arrive au TP5 : `SeatReserved`,
-`ReservationExpired`, `PaymentReceived`, `TicketIssued`, `SeatReleased`.
+**Communication inter-services** : le flux métier principal est désormais asynchrone.
+`booking-service` publie `SeatReserved`, `payment-service` l'encaisse puis répond par
+`PaymentReceived`; `booking-service` passe alors la réservation à `PAID`. Les pods joignent
+Kafka par le DNS Kubernetes `kafka:29092`. L'appel HTTP protégé par circuit breaker reste un
+endpoint de consultation du statut et démontre la résilience synchrone du TP3.
 
 **Pattern avancé retenu** (recommandé pour le sujet, à documenter en ADR séance 7) :
 réservation avec **TTL** + **Outbox** (émission fiable de `SeatReserved`) +
 **idempotence** du consommateur de paiement. Le piège traité : la **concurrence sur le
 stock** (verrou optimiste ou contrainte SQL) et les **doublons de messages**.
 
-### État fonctionnel après le TP4
+### État fonctionnel après le TP5
 
 - Réservation et décrément du stock atomiques, verrou optimiste avec retries bornés et test
   concurrent de non-survente.
 - Paiement persistant et idempotent, y compris en cas de requêtes concurrentes.
 - Appel HTTP inter-services protégé par timeout, circuit breaker et fallback métier.
-- Kafka KRaft, Kafka UI, 6 topics à 3 partitions, CLI, offsets, lag et rebalance démontrables.
+- Kafka KRaft, Kafka UI, 6 topics métier et 2 topics morts à 3 partitions.
+- Pipeline `POST → SeatReserved → PaymentReceived → PAID`, enveloppe polyglotte et clé
+  `reservationId` démontrables.
+- Déduplication `processed_events` atomique avec l'effet métier, testée par rejeu du même
+  `eventId`.
+- Trois traitements bornés puis DLQ/DLT des deux côtés; un poison pill ne bloque pas la suite.
 - Notification HTTP et MailDev disponibles comme bonus.
 
-L'expiration automatique, l'Outbox, les producers/consumers Kafka et l'émission automatique
-du billet restent volontairement au périmètre du TP5. Le scénario HTTP actuel les orchestre
-manuellement et ne doit pas être présenté comme un flux événementiel déjà terminé.
+`PaymentRejected` est déjà publié pour un montant supérieur à 100 EUR. La compensation du
+stock, l'expiration automatique, l'émission du billet et les notifications Kafka restent au
+périmètre du TP6. L'Outbox remplacera le dual-write au TP7.
 
 ---
 
@@ -85,10 +89,13 @@ Le plus simple : un [`Taskfile.yml`](Taskfile.yml) orchestre tout ([go-task](htt
 task up          # cluster k3d + build + import images + déploiement complet
 task status      # pods / services / ingress
 task test        # tests Java, Jest, FastAPI, lint et builds
-task smoke       # scénario HTTP manuel TP3/TP4 via l'Ingress
+task smoke       # scénario nominal TP5 via l'Ingress et Kafka
+task tp5:demo    # pipeline complet + preuve du rejeu idempotent
+task tp5:poison  # 3 tentatives puis DLQ Node et DLT Java
+task tp5:rejection # paiement à 149,70 EUR refusé de façon déterministe
 task demo:reset  # remettre stocks, réservations et paiements à zéro (avec confirmation)
 task front       # console de démo React (http://localhost:5173)
-task kafka:topics        # lister et décrire les 6 topics
+task kafka:topics        # lister et décrire les 8 topics
 task kafka:produce-demo  # produire 10 messages avec 3 clés
 task kafka:consume-demo  # afficher clé, partition et offset
 task kafka:lag-demo      # créer puis observer le lag d'un groupe
@@ -108,7 +115,7 @@ Kafka utilise deux listeners : `INTERNAL` annonce `kafka:29092` aux pods du clus
 `EXTERNAL` annonce `localhost:9092` aux clients du poste via `task kafka:forward`. Les
 adresses annoncées doivent être réellement joignables par le client Kafka.
 
-Les six topics sont créés par le Job `kafka-init` depuis le script versionné
+Les six topics métier et les deux topics morts sont créés par le Job `kafka-init` depuis le script versionné
 [`k3s/kafka/create-topics.sh`](k3s/kafka/create-topics.sh), avec **3 partitions** et un
 facteur de réplication **RF=1**. Trois partitions autorisent au maximum trois consommateurs
 actifs dans un même groupe. RF=1 est uniquement acceptable pour ce cluster local mono-broker;
@@ -129,6 +136,24 @@ depuis l'offset 0. Après une consommation limitée à 3 messages, le lag total 
 
 Le protocole complet de démonstration et les clés choisies par événement sont documentés dans
 [`docs/tp04-kafka.md`](docs/tp04-kafka.md) et [`docs/decoupage.md`](docs/decoupage.md).
+
+### Pipeline événementiel - TP5
+
+Le contrat commun contient `eventId`, `eventType`, `occurredAt`, `aggregateId` et `payload`.
+Pour le cycle de paiement, `aggregateId` et la clé Kafka valent `reservationId`; l'identifiant
+du concert ou match reste `payload.eventId`. Le prix unitaire est figé dans la réservation et
+le montant vaut `unitPrice × quantity`.
+
+```bash
+task tp5:demo    # crée, attend PAID, rejoue PaymentReceived, vérifie processed_events=1
+task tp5:poison  # injecte deux JSON invalides et contrôle les topics morts
+task tp5:rejection # prépare le chemin d'échec de la saga TP6
+```
+
+Le consumer Java insère l'`eventId` dans `processed_events` et passe la réservation à `PAID`
+au sein de la même transaction PostgreSQL. Côté Node comme côté Java, trois échecs conduisent
+à `booking.seat-reserved.DLQ` ou `payment.received.DLT`, puis l'offset suivant peut être traité.
+Le protocole détaillé est dans [`docs/tp05-pipeline.md`](docs/tp05-pipeline.md).
 
 ### Tout déployer dans le cluster (démo de soutenance)
 
@@ -154,10 +179,13 @@ kubectl -n tickrush wait --for=condition=complete job/kafka-init --timeout=180s
 kubectl apply -f k3s/payment-service/ -f k3s/booking-service/ -f k3s/notification-service/
 kubectl -n tickrush rollout status deployment/booking-service
 
-# 5. Appeler via la façade Traefik
-curl localhost:8081/events/11111111-1111-1111-1111-111111111111   # booking
+# 5. Démontrer le pipeline via la façade Traefik
+curl localhost:8081/events/11111111-1111-1111-1111-111111111111
+task tp5:demo
+
+# L'endpoint HTTP de paiement reste disponible pour le TP3 et le diagnostic
 curl -X POST localhost:8081/payments -H 'Content-Type: application/json' \
-  -d '{"reservationId":"<uuid>","amount":42}'                     # payment
+  -d '{"reservationId":"<uuid>","amount":49.90}'
 curl -X POST localhost:8081/notifications/ticket-issued -H 'Content-Type: application/json' \
   -d '{"to":"a@b.c","reservationId":"<uuid>","eventName":"Concert","quantity":2}'  # email
 
@@ -184,9 +212,10 @@ kubectl -n tickrush rollout status deployment/booking-db
 kubectl -n tickrush port-forward svc/booking-db 5432:5432   # laisser tourner
 ```
 
-**3. Le service** (dans un autre terminal) :
+**3. Kafka externe et le service** (dans deux autres terminaux) :
 
 ```bash
+task kafka:forward
 cd booking-service && ./mvnw spring-boot:run
 ```
 
@@ -255,7 +284,8 @@ microservices-tickrush/
 ├── docs/
 │   ├── adr/              # Architecture Decision Records (séance 7)
 │   ├── decoupage.md      # Event Storming (contextes, contrats)
-│   └── tp04-kafka.md     # démonstration partitions, offsets, lag et rebalance
+│   ├── tp04-kafka.md     # démonstration partitions, offsets, lag et rebalance
+│   └── tp05-pipeline.md  # pipeline, idempotence, retries et dead-letter topics
 ├── k3s/                  # manifests Kubernetes (remplace docker-compose)
 │   ├── namespace.yaml
 │   ├── booking-db/       # PostgreSQL du booking-service
@@ -267,5 +297,6 @@ microservices-tickrush/
 │   └── notification-service/  # deployment + service + ingress (image tickrush/notification-service)
 ├── booking-service/      # service Java — Spring Boot 3.5, JDK 21
 ├── payment-service/      # service Node/TS — NestJS 11
+├── scripts/              # scénarios reproductibles TP4/TP5
 └── notification-service/ # service Python — FastAPI (envoi email via MailDev)
 ```

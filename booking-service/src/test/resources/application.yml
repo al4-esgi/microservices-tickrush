@@ -18,3 +18,7 @@ payment:
 
 reservation:
   ttl-seconds: 120
+
+tickrush:
+  kafka:
+    enabled: false

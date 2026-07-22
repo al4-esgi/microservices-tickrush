@@ -123,10 +123,15 @@ tasks:
       - kubectl -n {{.NS}} wait --for=condition=complete job/kafka-init --timeout=180s
 
   redeploy:
-    desc: "Rebuild + réimport + redémarrage des services (après modif de code)"
+    desc: "Rebuild + réimport + mise à jour de l'infrastructure et des services"
     cmds:
       - task: build
       - task: import
+      - kubectl -n {{.NS}} delete job kafka-init --ignore-not-found
+      - kubectl apply -k k3s/kafka/
+      - kubectl -n {{.NS}} rollout status deployment/kafka --timeout=240s
+      - kubectl -n {{.NS}} wait --for=condition=complete job/kafka-init --timeout=180s
+      - kubectl apply -f k3s/booking-service/ -f k3s/payment-service/ -f k3s/notification-service/
       - kubectl -n {{.NS}} rollout restart deployment/booking-service deployment/payment-service deployment/notification-service
       - task: wait
 
@@ -196,7 +201,7 @@ tasks:
     desc: "Réinitialiser réservations, paiements et stocks de la démo locale"
     prompt: "Effacer toutes les réservations et tous les paiements du cluster local ?"
     cmds:
-      - kubectl -n {{.NS}} exec deployment/booking-db -- psql -v ON_ERROR_STOP=1 -U booking -d bookingdb -c "TRUNCATE TABLE reservations; UPDATE events SET available_seats = total_seats, version = version + 1;"
+      - kubectl -n {{.NS}} exec deployment/booking-db -- psql -v ON_ERROR_STOP=1 -U booking -d bookingdb -c "TRUNCATE TABLE processed_events, reservations; UPDATE events SET available_seats = total_seats, version = version + 1;"
       - kubectl -n {{.NS}} exec deployment/payment-db -- psql -v ON_ERROR_STOP=1 -U payment -d paymentdb -c "TRUNCATE TABLE payments;"
       - echo "Données de démonstration réinitialisées"
 
@@ -219,17 +224,17 @@ tasks:
 
   # ============ Kafka / TP4 ============
   kafka:topics:
-    desc: "Lister et décrire les six topics TickRush"
+    desc: "Lister et décrire les huit topics métier et dead-letter TickRush"
     cmds:
       - kubectl -n {{.NS}} exec deployment/kafka -- /opt/kafka/bin/kafka-topics.sh --bootstrap-server {{.KAFKA_BOOTSTRAP}} --list
       - |
-        for topic in booking.seat-reserved booking.reservation-expired booking.seat-released booking.ticket-issued payment.received payment.rejected; do
+        for topic in booking.seat-reserved booking.reservation-expired booking.seat-released booking.ticket-issued payment.received payment.rejected booking.seat-reserved.DLQ payment.received.DLT; do
           kubectl -n {{.NS}} exec deployment/kafka -- /opt/kafka/bin/kafka-topics.sh \
             --bootstrap-server {{.KAFKA_BOOTSTRAP}} --describe --topic "$topic"
         done
 
   kafka:produce-demo:
-    desc: "Produire 10 événements avec 3 clés eventId dans booking.seat-reserved"
+    desc: "Produire 10 sondes de partition avec 3 clés reservationId"
     cmds:
       - |
         kubectl -n {{.NS}} exec -i deployment/kafka -- /opt/kafka/bin/kafka-console-producer.sh \
@@ -291,9 +296,25 @@ tasks:
       - echo "Kafka UI -> http://localhost:8090  (Ctrl-C pour arrêter)"
       - kubectl -n {{.NS}} port-forward svc/kafka-ui 8090:8080
 
+  # ============ Pipeline événementiel / TP5 ============
+  tp5:demo:
+    desc: "Prouver POST -> SeatReserved -> PaymentReceived -> PAID puis le rejeu idempotent"
+    cmds:
+      - bash scripts/tp05-demo.sh
+
+  tp5:poison:
+    desc: "Prouver les 3 tentatives puis DLQ côté Node et DLT côté Java"
+    cmds:
+      - bash scripts/tp05-poison-demo.sh
+
+  tp5:rejection:
+    desc: "Prouver le refus déterministe d'un paiement supérieur à 100 EUR"
+    cmds:
+      - bash scripts/tp05-rejection-demo.sh
+
   # ============ Test rapide ============
   smoke:
-    desc: "Scénario HTTP provisoire TP3/TP4 (orchestration manuelle des 3 services)"
+    desc: "Scénario nominal TP5 : une réservation est payée automatiquement via Kafka"
     silent: true
     cmds:
       - |
@@ -305,8 +326,13 @@ tasks:
         echo "-> réservation : $R"
         RID=$(echo "$R" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
         test -n "$RID"
-        curl --fail-with-body -s -X POST localhost:8081/payments -H 'Content-Type: application/json' \
-              -d "{\"reservationId\":\"$RID\",\"amount\":42}" >/dev/null && echo "-> paiement OK"
-        curl --fail-with-body -s -X POST localhost:8081/notifications/ticket-issued -H 'Content-Type: application/json' \
-              -d "{\"to\":\"smoke@test.fr\",\"reservationId\":\"$RID\",\"eventName\":\"Smoke\",\"quantity\":1}" \
-              >/dev/null && echo "-> notification envoyée (voir MailDev)"
+        for i in $(seq 1 20); do
+          CURRENT=$(curl --fail-with-body -s localhost:8081/reservations/$RID)
+          echo "$CURRENT" | grep -q '"status":"PAID"' && break
+          sleep 1
+        done
+        echo "$CURRENT" | grep -q '"status":"PAID"'
+        echo "-> pipeline Kafka terminé : $CURRENT"
+        PAYMENT=$(curl --fail-with-body -s localhost:8081/reservations/$RID/payment-status)
+        echo "$PAYMENT" | grep -q 'RECEIVED'
+        echo "-> paiement persistant : $PAYMENT"

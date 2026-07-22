@@ -1,6 +1,6 @@
 """notification-service — envoi d'« emails » de confirmation TickRush.
 
-Pour l'instant déclenché en HTTP (endpoint /notifications/ticket-issued). À partir du TP5,
+Pour l'instant déclenché en HTTP (endpoint /notifications/ticket-issued). À partir du TP6,
 la même logique d'envoi sera branchée sur un consumer Kafka (topics booking.ticket-issued
 et booking.reservation-expired) - voir docs/decoupage.md.
 Les mails partent vers MailDev (faux SMTP + UI web) qui les capture sans rien envoyer.
