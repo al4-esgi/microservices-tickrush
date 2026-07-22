@@ -3,6 +3,8 @@ import { Kafka, logLevel } from 'kafkajs';
 import { PaymentsModule } from '../payments/payments.module';
 import { KAFKA_CLIENT } from './kafka.constants';
 import { KafkaPipelineService } from './kafka-pipeline.service';
+import { PaymentOutboxRelayService } from './payment-outbox-relay.service';
+import { PaymentOutboxWriter } from './payment-outbox.writer';
 
 @Module({
   imports: [PaymentsModule],
@@ -19,6 +21,8 @@ import { KafkaPipelineService } from './kafka-pipeline.service';
           logLevel: logLevel.WARN,
         }),
     },
+    PaymentOutboxWriter,
+    PaymentOutboxRelayService,
     KafkaPipelineService,
   ],
 })

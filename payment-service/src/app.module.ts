@@ -4,6 +4,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { HealthController } from './health/health.controller';
 import { KafkaMessagingModule } from './messaging/kafka-messaging.module';
+import { PaymentOutboxEventEntity } from './messaging/payment-outbox-event.entity';
 import { PaymentEntity } from './payments/payment.entity';
 import { PaymentsModule } from './payments/payments.module';
 
@@ -16,7 +17,7 @@ import { PaymentsModule } from './payments/payments.module';
       username: process.env.DB_USER ?? 'payment',
       password: process.env.DB_PASSWORD ?? 'payment',
       database: process.env.DB_NAME ?? 'paymentdb',
-      entities: [PaymentEntity],
+      entities: [PaymentEntity, PaymentOutboxEventEntity],
       synchronize: true, // acceptable pour le TP ; en prod : migrations
     }),
     PaymentsModule,

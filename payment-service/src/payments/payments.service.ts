@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { EntityManager, QueryFailedError, Repository } from 'typeorm';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { PaymentEntity, PaymentStatus } from './payment.entity';
 
@@ -23,8 +23,10 @@ export class PaymentsService {
   async authorize(
     dto: CreatePaymentDto,
     forcedFailureReason?: string,
+    manager?: EntityManager,
   ): Promise<{ payment: PaymentEntity; created: boolean }> {
-    const existing = await this.repo.findOne({
+    const repo = manager?.getRepository(PaymentEntity) ?? this.repo;
+    const existing = await repo.findOne({
       where: { reservationId: dto.reservationId },
     });
     if (existing) {
@@ -42,7 +44,7 @@ export class PaymentsService {
       (randomFailure ? 'SIMULATED_FAILURE' : undefined);
     const status: PaymentStatus = failureReason ? 'REJECTED' : 'RECEIVED';
 
-    const entity = this.repo.create({
+    const entity = repo.create({
       reservationId: dto.reservationId,
       amount: dto.amount,
       status,
@@ -50,11 +52,12 @@ export class PaymentsService {
     });
 
     try {
-      const saved = await this.repo.save(entity);
+      const saved = await repo.save(entity);
       return { payment: saved, created: true };
     } catch (err) {
       // course : violation d'unicité → un paiement a été créé entre-temps
       if (
+        !manager &&
         err instanceof QueryFailedError &&
         (err.driverError as { code?: string })?.code === PG_UNIQUE_VIOLATION
       ) {

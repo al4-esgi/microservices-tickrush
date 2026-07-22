@@ -1,4 +1,4 @@
-import { QueryFailedError, Repository } from 'typeorm';
+import { EntityManager, QueryFailedError, Repository } from 'typeorm';
 import { PaymentEntity } from './payment.entity';
 import { PaymentsService } from './payments.service';
 
@@ -72,6 +72,28 @@ describe('PaymentsService', () => {
       failureReason: null,
     });
     expect(repo.save).toHaveBeenCalledWith(payment);
+  });
+
+  it('uses the transaction repository when an outbox transaction supplies a manager', async () => {
+    const transactionalRepo: RepositoryMock = {
+      findOne: jest.fn().mockResolvedValue(null),
+      findOneByOrFail: jest.fn(),
+      create: jest.fn().mockReturnValue(payment),
+      save: jest.fn().mockResolvedValue(payment),
+    };
+    const manager = {
+      getRepository: jest.fn().mockReturnValue(transactionalRepo),
+    };
+
+    await service.authorize(
+      dto,
+      undefined,
+      manager as unknown as EntityManager,
+    );
+
+    expect(manager.getRepository).toHaveBeenCalledWith(PaymentEntity);
+    expect(transactionalRepo.save).toHaveBeenCalledWith(payment);
+    expect(repo.save).not.toHaveBeenCalled();
   });
 
   it('returns the winner after a concurrent unique-key conflict', async () => {

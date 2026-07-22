@@ -74,6 +74,14 @@ spec:
               value: kafka:29092
             - name: KAFKA_ENABLED
               value: "true"
+            - name: OUTBOX_ENABLED
+              value: "true"
+            - name: OUTBOX_RELAY_ENABLED
+              value: "true"
+            - name: OUTBOX_RELAY_INTERVAL_MS
+              value: "500"
+            - name: OUTBOX_RELAY_BATCH_SIZE
+              value: "50"
             - name: RESERVATION_TTL_SECONDS
               value: "120"
             - name: RESERVATION_EXPIRATION_SCAN_INTERVAL_MS

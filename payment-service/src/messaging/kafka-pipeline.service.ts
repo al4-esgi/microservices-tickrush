@@ -13,19 +13,9 @@ import {
   Partitioners,
   Producer,
 } from 'kafkajs';
-import { PaymentsService } from '../payments/payments.service';
-import {
-  createEnvelope,
-  parseEnvelope,
-  parseSeatReservedPayload,
-  PaymentResultPayload,
-} from './event-envelope';
-import {
-  KAFKA_CLIENT,
-  PAYMENT_FAILED_TOPIC,
-  PAYMENT_RECEIVED_TOPIC,
-  SEAT_RESERVED_TOPIC,
-} from './kafka.constants';
+import { parseEnvelope, parseSeatReservedPayload } from './event-envelope';
+import { KAFKA_CLIENT, SEAT_RESERVED_TOPIC } from './kafka.constants';
+import { PaymentOutboxWriter } from './payment-outbox.writer';
 
 @Injectable()
 export class KafkaPipelineService implements OnModuleInit, OnModuleDestroy {
@@ -37,7 +27,7 @@ export class KafkaPipelineService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     @Inject(KAFKA_CLIENT) kafka: Kafka,
-    private readonly payments: PaymentsService,
+    private readonly paymentOutbox: PaymentOutboxWriter,
   ) {
     this.producer = kafka.producer({
       createPartitioner: Partitioners.DefaultPartitioner,
@@ -70,7 +60,7 @@ export class KafkaPipelineService implements OnModuleInit, OnModuleDestroy {
       eachMessage: (context) => this.processWithRetry(context),
     });
     this.logger.log(
-      `Pipeline Kafka actif: ${SEAT_RESERVED_TOPIC} -> ${PAYMENT_RECEIVED_TOPIC}`,
+      `Pipeline Kafka actif: ${SEAT_RESERVED_TOPIC} -> outbox paiement`,
     );
   }
 
@@ -137,43 +127,15 @@ export class KafkaPipelineService implements OnModuleInit, OnModuleDestroy {
     }
 
     const expired = Date.parse(payload.expiresAt) <= Date.now();
-    const { payment } = await this.payments.authorize(
+    const result = await this.paymentOutbox.authorizeAndEnqueue(
       {
         reservationId: payload.reservationId,
         amount: payload.amount,
       },
       expired ? 'RESERVATION_EXPIRED' : undefined,
     );
-    const eventType =
-      payment.status === 'RECEIVED' ? 'PaymentReceived' : 'PaymentFailed';
-    const topic =
-      payment.status === 'RECEIVED'
-        ? PAYMENT_RECEIVED_TOPIC
-        : PAYMENT_FAILED_TOPIC;
-    const response = createEnvelope<PaymentResultPayload>(
-      payment.id,
-      eventType,
-      payload.reservationId,
-      {
-        paymentId: payment.id,
-        reservationId: payload.reservationId,
-        amount: payment.amount,
-        ...(payment.failureReason ? { reason: payment.failureReason } : {}),
-      },
-    );
-
-    await this.producer.send({
-      topic,
-      acks: -1,
-      messages: [
-        {
-          key: payload.reservationId,
-          value: JSON.stringify(response),
-        },
-      ],
-    });
     this.logger.log(
-      `${eventType} publie: eventId=${response.eventId}, reservationId=${response.aggregateId}, amount=${payment.amount}`,
+      `${result.eventType} enregistre dans l'outbox: eventId=${result.payment.id}, reservationId=${result.payment.reservationId}, amount=${result.payment.amount}, nouveau=${result.queued}`,
     );
   }
 

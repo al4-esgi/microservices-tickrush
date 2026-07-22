@@ -24,3 +24,7 @@ reservation:
 tickrush:
   kafka:
     enabled: false
+  outbox:
+    enabled: false
+    relay:
+      enabled: false

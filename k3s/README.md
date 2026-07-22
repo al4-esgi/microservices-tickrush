@@ -32,6 +32,13 @@ Un dossier par composant, manifests bruts :
 > **Une base par service** : `booking-service` → `booking-db`, `payment-service` → `payment-db`
 > (persistance TypeORM). Deux bases distinctes, aucun partage de schéma.
 
+Depuis le TP7, chacune de ces bases contient sa propre table `outbox`. Les Deployments
+configurent un polling toutes les 500 ms. La preuve de panne reste 100 % Kubernetes :
+
+```bash
+task tp7:outbox  # scale Kafka à 0, POST 201, inspection SQL, scale à 1 et rattrapage
+```
+
 ## Images (pas de registry — import direct dans k3d)
 
 ```bash

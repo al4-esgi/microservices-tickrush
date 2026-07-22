@@ -1,8 +1,8 @@
 import { EachMessagePayload, Kafka, ProducerRecord } from 'kafkajs';
 import { PaymentEntity } from '../payments/payment.entity';
-import { PaymentsService } from '../payments/payments.service';
 import { createEnvelope } from './event-envelope';
 import { KafkaPipelineService } from './kafka-pipeline.service';
+import { PaymentOutboxWriter } from './payment-outbox.writer';
 
 describe('KafkaPipelineService', () => {
   const reservationId = '65bfbf4f-6795-49a5-a57b-6f4ff78f0ac1';
@@ -25,7 +25,7 @@ describe('KafkaPipelineService', () => {
     subscribe: jest.Mock;
     run: jest.Mock;
   };
-  let payments: { authorize: jest.Mock };
+  let paymentOutbox: { authorizeAndEnqueue: jest.Mock };
 
   const seatReservedValue = (
     quantity = 2,
@@ -87,10 +87,10 @@ describe('KafkaPipelineService', () => {
       producer: jest.fn().mockReturnValue(producer),
       consumer: jest.fn().mockReturnValue(consumer),
     };
-    payments = { authorize: jest.fn() };
+    paymentOutbox = { authorizeAndEnqueue: jest.fn() };
     service = new KafkaPipelineService(
       kafka as unknown as Kafka,
-      payments as unknown as PaymentsService,
+      paymentOutbox as unknown as PaymentOutboxWriter,
     );
     await service.onModuleInit();
   });
@@ -100,7 +100,7 @@ describe('KafkaPipelineService', () => {
     delete process.env.KAFKA_MAX_ATTEMPTS;
   });
 
-  it('consumes SeatReserved and publishes PaymentReceived with the same key', async () => {
+  it('consumes SeatReserved and commits PaymentReceived to the outbox', async () => {
     const payment: PaymentEntity = {
       id: paymentId,
       reservationId,
@@ -109,30 +109,26 @@ describe('KafkaPipelineService', () => {
       failureReason: null,
       createdAt: new Date(),
     };
-    payments.authorize.mockResolvedValue({ payment, created: true });
+    paymentOutbox.authorizeAndEnqueue.mockResolvedValue({
+      payment,
+      created: true,
+      eventType: 'PaymentReceived',
+      queued: true,
+    });
 
     await eachMessage(context(seatReservedValue()));
 
-    expect(payments.authorize).toHaveBeenCalledWith(
+    expect(paymentOutbox.authorizeAndEnqueue).toHaveBeenCalledWith(
       {
         reservationId,
         amount: 99.8,
       },
       undefined,
     );
-    const record = sentRecords[0];
-    expect(record.topic).toBe('payment.received');
-    expect(record.messages[0].key).toBe(reservationId);
-    const response: unknown = JSON.parse(String(record.messages[0].value));
-    expect(response).toMatchObject({
-      eventId: paymentId,
-      eventType: 'PaymentReceived',
-      aggregateId: reservationId,
-      payload: { paymentId, reservationId, amount: 99.8 },
-    });
+    expect(sentRecords).toHaveLength(0);
   });
 
-  it('publishes PaymentFailed for a controlled business rejection', async () => {
+  it('commits PaymentFailed to the outbox for a controlled rejection', async () => {
     const payment: PaymentEntity = {
       id: paymentId,
       reservationId,
@@ -141,16 +137,20 @@ describe('KafkaPipelineService', () => {
       failureReason: 'AMOUNT_THRESHOLD',
       createdAt: new Date(),
     };
-    payments.authorize.mockResolvedValue({ payment, created: true });
+    paymentOutbox.authorizeAndEnqueue.mockResolvedValue({
+      payment,
+      created: true,
+      eventType: 'PaymentFailed',
+      queued: true,
+    });
 
     await eachMessage(context(seatReservedValue(3, 149.7)));
 
-    expect(sentRecords[0].topic).toBe('payment.rejected');
-    expect(JSON.parse(String(sentRecords[0].messages[0].value))).toMatchObject({
-      eventType: 'PaymentFailed',
-      aggregateId: reservationId,
-      payload: { reason: 'AMOUNT_THRESHOLD' },
-    });
+    expect(paymentOutbox.authorizeAndEnqueue).toHaveBeenCalledWith(
+      { reservationId, amount: 149.7 },
+      undefined,
+    );
+    expect(sentRecords).toHaveLength(0);
   });
 
   it('rejects an expired reservation without authorizing it as received', async () => {
@@ -162,17 +162,22 @@ describe('KafkaPipelineService', () => {
       failureReason: 'RESERVATION_EXPIRED',
       createdAt: new Date(),
     };
-    payments.authorize.mockResolvedValue({ payment, created: true });
+    paymentOutbox.authorizeAndEnqueue.mockResolvedValue({
+      payment,
+      created: true,
+      eventType: 'PaymentFailed',
+      queued: true,
+    });
 
     await eachMessage(
       context(seatReservedValue(2, 99.8, '2020-01-01T00:00:00.000Z')),
     );
 
-    expect(payments.authorize).toHaveBeenCalledWith(
+    expect(paymentOutbox.authorizeAndEnqueue).toHaveBeenCalledWith(
       { reservationId, amount: 99.8 },
       'RESERVATION_EXPIRED',
     );
-    expect(sentRecords[0].topic).toBe('payment.rejected');
+    expect(sentRecords).toHaveLength(0);
   });
 
   it('retries malformed JSON three times then publishes it to the DLQ', async () => {

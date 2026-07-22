@@ -201,8 +201,8 @@ tasks:
     desc: "Réinitialiser réservations, paiements et stocks de la démo locale"
     prompt: "Effacer toutes les réservations et tous les paiements du cluster local ?"
     cmds:
-      - kubectl -n {{.NS}} exec deployment/booking-db -- psql -v ON_ERROR_STOP=1 -U booking -d bookingdb -c "TRUNCATE TABLE processed_events, reservations; UPDATE events SET available_seats = total_seats, version = version + 1;"
-      - kubectl -n {{.NS}} exec deployment/payment-db -- psql -v ON_ERROR_STOP=1 -U payment -d paymentdb -c "TRUNCATE TABLE payments;"
+      - kubectl -n {{.NS}} exec deployment/booking-db -- psql -v ON_ERROR_STOP=1 -U booking -d bookingdb -c "TRUNCATE TABLE processed_events, outbox, reservations RESTART IDENTITY; UPDATE events SET available_seats = total_seats, version = version + 1;"
+      - kubectl -n {{.NS}} exec deployment/payment-db -- psql -v ON_ERROR_STOP=1 -U payment -d paymentdb -c "TRUNCATE TABLE outbox, payments RESTART IDENTITY;"
       - echo "Données de démonstration réinitialisées"
 
   # ============ Front de démo ============
@@ -328,9 +328,15 @@ tasks:
     cmds:
       - bash scripts/tp06-chaos-demo.sh
 
+  # ============ Transactional Outbox / TP7 ============
+  tp7:outbox:
+    desc: "Couper Kafka, créer une réservation puis prouver le rattrapage Outbox"
+    cmds:
+      - bash scripts/tp07-outbox-crash-demo.sh
+
   # ============ Test rapide ============
   smoke:
-    desc: "Scénario nominal TP6 : une réservation reçoit automatiquement son billet"
+    desc: "Scénario nominal TP7 : la saga traverse les deux Outbox jusqu'au billet"
     silent: true
     cmds:
       - |

@@ -50,12 +50,13 @@ stock. `notification-service` reçoit les faits finaux. Les pods joignent Kafka 
 Kubernetes `kafka:29092`. L'appel HTTP protégé par circuit breaker reste un endpoint de
 consultation du statut et démontre la résilience synchrone du TP3.
 
-**Pattern avancé retenu** : **saga chorégraphiée** avec compensation du stock, TTL et
-idempotence transactionnelle. Le choix est justifié dans
-[`ADR-001`](docs/adr/001-choregraphie-vs-orchestration.md). L'Outbox du TP07 supprimera la
-fenêtre de dual-write restante.
+**Patterns avancés retenus** : **saga chorégraphiée** avec compensation du stock, TTL et
+idempotence transactionnelle, puis **Transactional Outbox** dans les deux services
+producteurs. Les décisions sont justifiées dans
+[`ADR-001`](docs/adr/001-choregraphie-vs-orchestration.md) et
+[`ADR-002`](docs/adr/002-transactional-outbox.md).
 
-### État fonctionnel après le TP6
+### État fonctionnel après le TP7
 
 - Réservation et décrément du stock atomiques, verrou optimiste avec retries bornés et test
   concurrent de non-survente.
@@ -71,9 +72,15 @@ fenêtre de dual-write restante.
   `eventId`.
 - Trois traitements bornés puis DLQ/DLT des deux côtés; un poison pill ne bloque pas la suite.
 - Notification Kafka des billets et expirations, capturée dans MailDev.
+- Tables `outbox` privées dans `booking-db` et `payment-db`; donnée métier et événement sont
+  validés par le même commit PostgreSQL.
+- Relayeurs à polling de 500 ms, `acks=all`, ordre d'insertion et marquage `published_at`
+  uniquement après l'ACK Kafka.
+- Publication at-least-once couplée à l'Inbox `processed_events` : aucune perte et un seul
+  effet métier malgré un éventuel doublon.
 
-La saga, sa version orchestrée et la démonstration sont détaillées dans
-[`docs/saga.md`](docs/saga.md). L'Outbox remplacera le dual-write au TP7.
+La saga et sa version orchestrée sont détaillées dans [`docs/saga.md`](docs/saga.md). La
+preuve de panne Outbox est reproductible avec `task tp7:outbox`.
 
 ---
 
@@ -92,13 +99,14 @@ Le plus simple : un [`Taskfile.yml`](Taskfile.yml) orchestre tout ([go-task](htt
 task up          # cluster k3d + build + import images + déploiement complet
 task status      # pods / services / ingress
 task test        # tests Java, Jest, FastAPI, lint et builds
-task smoke       # scénario nominal TP6 via l'Ingress et Kafka
+task smoke       # scénario nominal TP7 via l'Ingress, les Outbox et Kafka
 task tp5:demo    # pipeline complet + preuve du rejeu idempotent
 task tp5:poison  # 3 tentatives puis DLQ Node et DLT Java
 task tp5:rejection # paiement à 149,70 EUR refusé de façon déterministe
 task tp6:demo    # succès + compensation mesurée + rejeu idempotent
 task tp6:ttl     # expiration et remise en stock, configuration restaurée ensuite
 task tp6:chaos   # reprise automatique après arrêt du payment-service
+task tp7:outbox  # Kafka arrêté : POST 201, Outbox en attente, puis rattrapage sans perte
 task demo:reset  # remettre stocks, réservations et paiements à zéro (avec confirmation)
 task front       # console de démo React (http://localhost:5173)
 task kafka:topics        # lister et décrire les 11 topics
@@ -174,6 +182,35 @@ Le succès termine à `TICKET_ISSUED`; un refus termine à `CANCELLED`; un timeo
 de publier `SeatReleased`. Le marker `processed_events`, les verrous de réservation et les
 transitions métier rendent étapes et compensations idempotentes. Le service Python consomme
 `TicketIssued` et `ReservationExpired`, puis envoie les emails vers MailDev.
+
+### Transactional Outbox - TP7
+
+`booking-service` ne publie plus directement après son commit. Il écrit chaque enveloppe
+dans `booking-db.outbox` avec la réservation, le billet ou la compensation. De même,
+`payment-service` écrit le paiement et son résultat dans `payment-db.outbox` dans une seule
+transaction TypeORM. Les relayeurs publient ensuite vers Kafka et renseignent
+`published_at` seulement après l'ACK.
+
+La démonstration demandée par le TP est entièrement scriptée pour k3s :
+
+```bash
+task tp7:outbox
+```
+
+Le script exécute et vérifie automatiquement les étapes suivantes :
+
+1. Il scale le Deployment Kafka à zéro.
+2. Il appelle `POST /reservations` et exige une réponse `201` avec un stock décrémenté.
+3. Il interroge PostgreSQL et prouve que la réservation existe tandis que `SeatReserved`
+   possède encore `published_at IS NULL`.
+4. Il relance Kafka sans effectuer de nouvel appel client.
+5. Il attend `TICKET_ISSUED`, puis vérifie les Outbox `SeatReserved`, `PaymentReceived` et
+   `TicketIssued`, l'Inbox `processed_events=1` et le stock décrémenté une seule fois.
+
+Un `trap` restaure Kafka même si une assertion échoue. La publication est at-least-once :
+un crash après l'ACK et avant le marquage peut republier, mais les consommateurs idempotents
+neutralisent ce doublon. Le choix et ses coûts sont détaillés dans
+[`ADR-002`](docs/adr/002-transactional-outbox.md).
 
 ### Tout déployer dans le cluster (démo de soutenance)
 
@@ -302,7 +339,7 @@ Preuve dans les logs (`kubectl -n tickrush logs deployment/booking-service`) : d
 microservices-tickrush/
 ├── README.md
 ├── docs/
-│   ├── adr/              # ADR de la saga chorégraphiée
+│   ├── adr/              # ADR saga et Transactional Outbox
 │   ├── decoupage.md      # Event Storming (contextes, contrats)
 │   ├── tp04-kafka.md     # démonstration partitions, offsets, lag et rebalance
 │   ├── saga.md           # saga réelle et esquisse orchestrée
@@ -318,6 +355,6 @@ microservices-tickrush/
 │   └── notification-service/  # deployment + service + ingress (image tickrush/notification-service)
 ├── booking-service/      # service Java — Spring Boot 3.5, JDK 21
 ├── payment-service/      # service Node/TS — NestJS 11
-├── scripts/              # scénarios reproductibles TP4/TP5/TP6
+├── scripts/              # scénarios reproductibles TP4 à TP7
 └── notification-service/ # service Python — consumer Kafka + FastAPI + MailDev
 ```

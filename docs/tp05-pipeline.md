@@ -24,6 +24,10 @@ d'émettre une réservation annulée par un conflit de verrou optimiste. Il rest
 fenêtre entre le commit PostgreSQL et l'envoi Kafka : c'est le dual-write volontaire du TP05,
 qui sera remplacé par l'Outbox au TP07.
 
+> État actuel après le TP07 : cette frontière historique est remplacée par une écriture
+> `outbox` en `BEFORE_COMMIT`; voir
+> [`ADR-002`](adr/002-transactional-outbox.md) et `task tp7:outbox`.
+
 ## Enveloppe et clés
 
 ```json

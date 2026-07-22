@@ -62,6 +62,12 @@ spec:
               value: "3"
             - name: KAFKA_RETRY_BACKOFF_MS
               value: "1000"
+            - name: OUTBOX_RELAY_ENABLED
+              value: "true"
+            - name: OUTBOX_RELAY_INTERVAL_MS
+              value: "500"
+            - name: OUTBOX_RELAY_BATCH_SIZE
+              value: "50"
             # Base dédiée (DNS de Service k8s) + creds depuis le Secret payment-db
             - name: DB_HOST
               value: payment-db

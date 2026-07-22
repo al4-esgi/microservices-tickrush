@@ -22,6 +22,9 @@ spring:
       properties:
         allow.auto.create.topics: false
         enable.idempotence: true
+        max.block.ms: 3000
+        request.timeout.ms: 3000
+        delivery.timeout.ms: 10000
     consumer:
       group-id: booking-service
       auto-offset-reset: earliest
@@ -32,6 +35,11 @@ spring:
         allow.auto.create.topics: false
     listener:
       ack-mode: record
+  task:
+    scheduling:
+      pool:
+        size: 2
+      thread-name-prefix: tickrush-scheduling-
 
 tickrush:
   kafka:
@@ -43,6 +51,14 @@ tickrush:
       ticket-issued: booking.ticket-issued
       reservation-expired: booking.reservation-expired
       seat-released: booking.seat-released
+  outbox:
+    enabled: ${OUTBOX_ENABLED:true}
+    relay:
+      enabled: ${OUTBOX_RELAY_ENABLED:true}
+      fixed-delay-ms: ${OUTBOX_RELAY_INTERVAL_MS:500}
+      initial-delay-ms: ${OUTBOX_RELAY_INITIAL_DELAY_MS:500}
+      batch-size: ${OUTBOX_RELAY_BATCH_SIZE:50}
+      send-timeout-ms: ${OUTBOX_RELAY_SEND_TIMEOUT_MS:5000}
 
 management:
   endpoints:

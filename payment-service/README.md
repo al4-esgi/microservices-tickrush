@@ -15,9 +15,11 @@ Le taux de refus est configurable avec `PAYMENT_FAILURE_RATE` entre 0 et 1. L'id
 reste garantie sous concurrence : une violation PostgreSQL `23505` provoque la relecture du
 paiement créé par la requête gagnante.
 
-Depuis le TP05, le service consomme `booking.seat-reserved` avec KafkaJS, appelle la même
-logique métier que l'endpoint REST puis publie `PaymentReceived` sur `payment.received` ou
-`PaymentFailed` sur `payment.rejected`, avec la clé `reservationId`.
+Depuis le TP05, le service consomme `booking.seat-reserved` avec KafkaJS et appelle la même
+logique métier que l'endpoint REST. Depuis le TP07, le paiement et `PaymentReceived` ou
+`PaymentFailed` sont écrits dans la même transaction TypeORM. Le relayeur Outbox publie
+ensuite sur `payment.received` ou `payment.rejected`, avec la clé `reservationId`, et ne
+renseigne `published_at` qu'après l'ACK Kafka.
 `PAYMENT_REJECTION_THRESHOLD` vaut `100` dans k3s : une place à
 `49.90 EUR` est acceptée, trois places à `149.70 EUR` sont refusées de façon déterministe.
 
@@ -40,3 +42,4 @@ npm run build
 ```
 
 En k3s, le service utilise `payment-db:5432`; aucun autre service n'accède à cette base.
+La table `outbox` est privée au service, comme la table `payments`.
