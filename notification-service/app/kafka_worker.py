@@ -5,7 +5,7 @@ import threading
 import time
 from collections.abc import Callable
 
-from confluent_kafka import Consumer, KafkaError, Producer
+from confluent_kafka import Consumer, KafkaError, Producer, TopicPartition
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,18 @@ class KafkaNotificationWorker:
                     if message.error().code() != KafkaError._PARTITION_EOF:
                         logger.error("Erreur consumer Kafka: %s", message.error())
                     continue
-                self._process(consumer, producer, message)
+                try:
+                    self._process(consumer, producer, message)
+                except Exception:  # noqa: BLE001 - ne jamais avancer après un échec DLT
+                    logger.exception(
+                        "Publication DLT impossible; offset non validé, nouvel essai"
+                    )
+                    consumer.seek(
+                        TopicPartition(
+                            message.topic(), message.partition(), message.offset()
+                        )
+                    )
+                    time.sleep(1)
         finally:
             producer.flush(10)
             consumer.close()
@@ -102,13 +113,26 @@ class KafkaNotificationWorker:
                 ("x-error-message", last_error[:500].encode()),
             ]
         )
+        delivered = False
+        delivery_error: KafkaError | None = None
+
+        def on_delivery(error: KafkaError | None, _) -> None:
+            nonlocal delivered, delivery_error
+            delivered = True
+            delivery_error = error
+
         producer.produce(
             topic=f"{message.topic()}.DLT",
             key=message.key(),
             value=message.value(),
             partition=message.partition(),
             headers=headers,
+            on_delivery=on_delivery,
         )
-        producer.flush(10)
+        remaining = producer.flush(10)
+        if remaining != 0 or not delivered:
+            raise RuntimeError("Timeout pendant la publication vers la DLT")
+        if delivery_error is not None:
+            raise RuntimeError(f"Kafka a refusé la publication DLT: {delivery_error}")
         consumer.commit(message=message, asynchronous=False)
         logger.error("Message déplacé vers %s.DLT", message.topic())

@@ -23,6 +23,10 @@ les endpoints REST et les topics Kafka créés au TP4.
 | 9  | RéservationAnnulée   | le client annule sa réservation avant paiement                           |
 
 > 9 événements, dont **3 d'échec** (RéservationRefusée, PaiementRefusé, RéservationExpirée).
+> Cette première passe Event Storming explore le domaine plus largement que le MVP. Dans le
+> périmètre livré, `RéservationRefusée` est un résultat synchrone HTTP 409 et n'est pas publiée
+> dans Kafka. L'annulation manuelle par le client reste une évolution future; `CANCELLED` est
+> actuellement déclenché automatiquement par un paiement refusé.
 
 ---
 
@@ -35,7 +39,7 @@ les endpoints REST et les topics Kafka créés au TP4.
 | PayerRéservation    | Client              | PaiementReçu **OU** PaiementRefusé        |
 | ÉmettreBillet       | Système             | BilletÉmis                               |
 | ExpirerRéservation  | Système (scheduler) | RéservationExpirée → PlacesLibérées       |
-| AnnulerRéservation  | Client              | RéservationAnnulée → PlacesLibérées        |
+| AnnulerRéservation  | Client (hors MVP)    | RéservationAnnulée → PlacesLibérées        |
 | LibérerPlaces       | Système             | PlacesLibérées                           |
 
 ---
@@ -50,8 +54,10 @@ les endpoints REST et les topics Kafka créés au TP4.
     le prix unitaire courant d'une place.
   - `Réservation` — cycle de vie `PENDING → TICKET_ISSUED | EXPIRED | CANCELLED`, avec **TTL**.
     Elle fige le prix unitaire et le montant `unitPrice × quantity` au moment de la vente.
-- **Événements émis** : PlacesRéservées, RéservationRefusée, RéservationExpirée,
-  PlacesLibérées, BilletÉmis, RéservationAnnulée.
+- **Événements Kafka émis dans le MVP** : PlacesRéservées, RéservationExpirée,
+  PlacesLibérées, BilletÉmis.
+- **Résultat REST** : RéservationRefusée (`409 Conflict`); **évolution future** : annulation
+  manuelle et événement RéservationAnnulée.
 - **Événements consommés** : PaiementReçu, PaiementRefusé.
 
 ### Contexte 2 — Paiement (`payment-service`, Node / NestJS)

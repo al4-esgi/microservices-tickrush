@@ -252,23 +252,30 @@ tasks:
           --property parse.key=true --property key.separator=: < scripts/kafka-demo-events.txt
 
   kafka:consume-demo:
-    desc: "Relire les événements avec clé, partition et offset"
+    desc: "Relire les 10 dernières sondes avec clé, partition et offset"
     cmds:
       - |
-        kubectl -n {{.NS}} exec deployment/kafka -- /opt/kafka/bin/kafka-console-consumer.sh \
+        messages="$(kubectl -n {{.NS}} exec deployment/kafka -- \
+          /opt/kafka/bin/kafka-console-consumer.sh \
           --bootstrap-server {{.KAFKA_BOOTSTRAP}} --topic booking.seat-reserved \
-          --from-beginning --max-messages 10 \
+          --from-beginning --timeout-ms 5000 \
           --property print.key=true --property print.partition=true --property print.offset=true \
-          --property key.separator=' | '
+          --property key.separator=' | ' 2>/dev/null | \
+          grep '"eventType":"PartitionProbe"')"
+        for sequence in $(seq 1 10); do
+          printf '%s\n' "$messages" | grep -F "\"sequence\":${sequence}}" | tail -n 1
+        done
 
   kafka:consume:partition:
-    desc: "Relire uniquement la partition 0 de booking.seat-reserved"
+    desc: "Relire les dernières sondes de la partition 0"
     cmds:
       - |
         kubectl -n {{.NS}} exec deployment/kafka -- /opt/kafka/bin/kafka-console-consumer.sh \
           --bootstrap-server {{.KAFKA_BOOTSTRAP}} --topic booking.seat-reserved \
-          --partition 0 --offset earliest --max-messages 7 \
-          --property print.key=true --property print.offset=true --property key.separator=' | '
+          --partition 0 --offset earliest --timeout-ms 5000 \
+          --property print.key=true --property print.offset=true \
+          --property key.separator=' | ' 2>/dev/null | \
+          grep '"eventType":"PartitionProbe"' | tail -n 10
 
   kafka:group:consume:
     desc: "Démarrer un consommateur du groupe tickrush-demo (Ctrl-C pour arrêter)"

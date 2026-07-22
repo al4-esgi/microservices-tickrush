@@ -8,6 +8,8 @@ forte charge, et ne jamais dupliquer ni perdre un paiement.
 
 **Auteurs** : Alexandru Rusescu · Fethi Sedjai
 
+**Organisation** : réalisation à deux auteurs, explicitement autorisée par le formateur.
+
 ---
 
 ## User stories minimales (démontrées en soutenance)
@@ -26,7 +28,7 @@ forte charge, et ne jamais dupliquer ni perdre un paiement.
 - **Payer** une réservation dans le délai imparti
 - **Émettre / consulter** son billet après paiement
 - **Expirer** une réservation non payée → **libérer** les places (remise en vente)
-- **Annuler** une réservation
+- **Annuler automatiquement** une réservation après un paiement refusé → **libérer** les places
 - **Notifier** la confirmation par « email » simulé _(bonus : notification-service)_
 
 ---
@@ -190,7 +192,9 @@ Le succès termine à `TICKET_ISSUED`; un refus termine à `CANCELLED`; un timeo
 `EXPIRED`. `CANCELLED` et `EXPIRED` restaurent les places dans une transaction locale avant
 de publier `SeatReleased`. Le marker `processed_events`, les verrous de réservation et les
 transitions métier rendent étapes et compensations idempotentes. Le service Python consomme
-`TicketIssued` et `ReservationExpired`, puis envoie les emails vers MailDev.
+`TicketIssued` et `ReservationExpired`, puis envoie les emails vers MailDev. Cette notification
+bonus est volontairement **at-least-once** : un crash après l'envoi SMTP mais avant le commit de
+l'offset peut dupliquer un email, sans dupliquer le paiement, le billet ni la compensation.
 
 ### Transactional Outbox - TP7
 
@@ -375,7 +379,9 @@ curl localhost:8080/actuator/circuitbreakers        # "state":"OPEN"
 
 kubectl -n tickrush scale deployment/payment-service --replicas=1  # reprise
 sleep 11                                             # waitDurationInOpenState
-curl localhost:8080/reservations/$RID/payment-status # HALF_OPEN → CLOSED
+# 2 appels autorisés en HALF_OPEN sont requis par la configuration actuelle
+for i in 1 2; do curl -s localhost:8080/reservations/$RID/payment-status; echo; done
+curl localhost:8080/actuator/circuitbreakers        # "state":"CLOSED"
 ```
 
 **Séquence observée** `CLOSED → OPEN → HALF_OPEN → CLOSED` :
@@ -385,7 +391,8 @@ curl localhost:8080/reservations/$RID/payment-status # HALF_OPEN → CLOSED
 | Nominal | `RECEIVED` | `CLOSED` | normale |
 | Panne, appels 1-4 | `UNKNOWN` (fallback) | `CLOSED` puis bascule | jusqu'au timeout |
 | Panne, appels ≥ 5 | `UNKNOWN` (fallback) | `OPEN` | **instantané** (court-circuité) |
-| Reprise, +10 s | `RECEIVED` | `HALF_OPEN` → `CLOSED` | normale |
+| Reprise, +10 s, appel 1 | `RECEIVED` | `HALF_OPEN` | normale |
+| Reprise, appel 2 | `RECEIVED` | `CLOSED` | normale |
 
 Preuve dans les logs (`kubectl -n tickrush logs deployment/booking-service`) : d'abord
 `ResourceAccessException` (I/O error / connect timeout = vraies tentatives), puis

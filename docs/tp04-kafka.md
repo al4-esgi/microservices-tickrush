@@ -48,10 +48,12 @@ task kafka:lag-demo
 
 `task kafka:produce-demo` écrit 10 sondes sans effet métier avec 3 `reservationId`. Leur
 `eventType=PartitionProbe` est volontairement ignoré par le consumer applicatif du TP5.
-Le consumer CLI affiche la clé, la partition et l'offset. Tous les messages portant la même clé arrivent dans la même
-partition et leurs offsets augmentent : l'ordre est garanti dans une partition, pas entre
-toutes les partitions. Relancer `task kafka:consume-demo` relit les mêmes messages depuis
-l'offset 0; consommer ne les détruit pas.
+Le consumer CLI filtre ce type et affiche la dernière occurrence de chacune des 10 séquences
+avec sa clé, sa partition et son offset. La démonstration reste donc lisible même après les TP
+suivants sur un cluster persistant et montre toujours les trois clés choisies.
+Tous les messages portant la même clé arrivent dans la même partition et leurs offsets
+augmentent : l'ordre est garanti dans une partition, pas entre toutes les partitions. Le
+consumer relit le journal depuis l'offset 0 avant de filtrer; consommer ne détruit pas les faits.
 
 Pour observer un rebalance, lancer la commande suivante dans deux terminaux :
 
