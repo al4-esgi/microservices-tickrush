@@ -27,7 +27,11 @@ describe('KafkaPipelineService', () => {
   };
   let payments: { authorize: jest.Mock };
 
-  const seatReservedValue = (quantity = 2, amount = 99.8): string =>
+  const seatReservedValue = (
+    quantity = 2,
+    amount = 99.8,
+    expiresAt = new Date(Date.now() + 60_000).toISOString(),
+  ): string =>
     JSON.stringify(
       createEnvelope(seatReservedEventId, 'SeatReserved', reservationId, {
         reservationId,
@@ -36,6 +40,7 @@ describe('KafkaPipelineService', () => {
         quantity,
         unitPrice: 49.9,
         amount,
+        expiresAt,
       }),
     );
 
@@ -101,16 +106,20 @@ describe('KafkaPipelineService', () => {
       reservationId,
       amount: 99.8,
       status: 'RECEIVED',
+      failureReason: null,
       createdAt: new Date(),
     };
     payments.authorize.mockResolvedValue({ payment, created: true });
 
     await eachMessage(context(seatReservedValue()));
 
-    expect(payments.authorize).toHaveBeenCalledWith({
-      reservationId,
-      amount: 99.8,
-    });
+    expect(payments.authorize).toHaveBeenCalledWith(
+      {
+        reservationId,
+        amount: 99.8,
+      },
+      undefined,
+    );
     const record = sentRecords[0];
     expect(record.topic).toBe('payment.received');
     expect(record.messages[0].key).toBe(reservationId);
@@ -123,18 +132,46 @@ describe('KafkaPipelineService', () => {
     });
   });
 
-  it('publishes PaymentRejected for a controlled business rejection', async () => {
+  it('publishes PaymentFailed for a controlled business rejection', async () => {
     const payment: PaymentEntity = {
       id: paymentId,
       reservationId,
       amount: 149.7,
       status: 'REJECTED',
+      failureReason: 'AMOUNT_THRESHOLD',
       createdAt: new Date(),
     };
     payments.authorize.mockResolvedValue({ payment, created: true });
 
     await eachMessage(context(seatReservedValue(3, 149.7)));
 
+    expect(sentRecords[0].topic).toBe('payment.rejected');
+    expect(JSON.parse(String(sentRecords[0].messages[0].value))).toMatchObject({
+      eventType: 'PaymentFailed',
+      aggregateId: reservationId,
+      payload: { reason: 'AMOUNT_THRESHOLD' },
+    });
+  });
+
+  it('rejects an expired reservation without authorizing it as received', async () => {
+    const payment: PaymentEntity = {
+      id: paymentId,
+      reservationId,
+      amount: 99.8,
+      status: 'REJECTED',
+      failureReason: 'RESERVATION_EXPIRED',
+      createdAt: new Date(),
+    };
+    payments.authorize.mockResolvedValue({ payment, created: true });
+
+    await eachMessage(
+      context(seatReservedValue(2, 99.8, '2020-01-01T00:00:00.000Z')),
+    );
+
+    expect(payments.authorize).toHaveBeenCalledWith(
+      { reservationId, amount: 99.8 },
+      'RESERVATION_EXPIRED',
+    );
     expect(sentRecords[0].topic).toBe('payment.rejected');
   });
 

@@ -2,7 +2,8 @@ package fr.esgi.tickrush.booking.domain;
 
 import fr.esgi.tickrush.booking.repository.EventRepository;
 import fr.esgi.tickrush.booking.repository.ReservationRepository;
-import fr.esgi.tickrush.booking.messaging.SeatReservedApplicationEvent;
+import fr.esgi.tickrush.booking.messaging.BookingApplicationEvent;
+import fr.esgi.tickrush.booking.messaging.SeatReservedPayload;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -57,13 +58,14 @@ class ReservationServiceTest {
         assertThat(result.getAmount()).isEqualByComparingTo("149.70");
         verify(events).save(event);
         verify(reservations).save(result);
-        ArgumentCaptor<SeatReservedApplicationEvent> eventCaptor =
-                ArgumentCaptor.forClass(SeatReservedApplicationEvent.class);
+        ArgumentCaptor<BookingApplicationEvent<SeatReservedPayload>> eventCaptor =
+                ArgumentCaptor.forClass(BookingApplicationEvent.class);
         verify(applicationEvents).publishEvent(eventCaptor.capture());
-        SeatReservedApplicationEvent published = eventCaptor.getValue();
+        BookingApplicationEvent<SeatReservedPayload> published = eventCaptor.getValue();
         assertThat(published.envelope().aggregateId()).isEqualTo(result.getId());
         assertThat(published.envelope().payload().eventId()).isEqualTo(eventId);
         assertThat(published.envelope().payload().amount()).isEqualByComparingTo("149.70");
+        assertThat(published.envelope().payload().expiresAt()).isEqualTo(result.getExpiresAt());
     }
 
     @Test

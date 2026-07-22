@@ -12,7 +12,7 @@ POST /reservations
   -> booking.seat-reserved (SeatReserved, clé = reservationId)
   -> payment-service crée un paiement idempotent
   -> payment.received (PaymentReceived, même clé)
-  -> booking-service insère processed_events et passe la réservation à PAID
+  -> booking-service insère processed_events et passe la réservation à PAID (frontière TP05)
 ```
 
 Le concert seedé coûte `49.90 EUR` par place. `SeatReserved.payload` contient `quantity`,
@@ -38,7 +38,8 @@ qui sera remplacé par l'Outbox au TP07.
     "customerRef": "client@esgi.fr",
     "quantity": 1,
     "unitPrice": 49.90,
-    "amount": 49.90
+    "amount": 49.90,
+    "expiresAt": "2026-07-22T08:02:00Z"
   }
 }
 ```
@@ -90,12 +91,13 @@ task tp5:rejection
 
 Trois places au tarif de `49.90 EUR` produisent un montant de `149.70 EUR`, supérieur au
 seuil `PAYMENT_REJECTION_THRESHOLD=100`. Le service Node persiste `REJECTED` et publie
-`PaymentRejected`. La réservation reste volontairement `PENDING` au TP05 : le TP06 ajoutera
-la réaction, la remise des trois places en stock et l'événement de compensation.
+`PaymentFailed` sur le topic `payment.rejected`. À la frontière du TP05, la réservation
+restait volontairement `PENDING` : le TP06 ajoute la réaction, la remise des trois places en
+stock et l'événement de compensation.
 
 ## Limites volontaires
 
-- `PaymentRejected` est déjà produit de façon déterministe pour un montant supérieur à
+- `PaymentFailed` est produit de façon déterministe pour un montant supérieur à
   `100 EUR`, mais sa compensation (remise des places en stock) appartient au TP06.
 - L'émission du billet, le TTL automatique et les notifications Kafka seront raccordés à la
   saga au TP06.
@@ -111,5 +113,5 @@ la réaction, la remise des trois places en stock et l'événement de compensati
 - Un poison côté Node et un poison côté Java produisent chacun exactement 3 erreurs, arrivent
   dans leur DLQ/DLT, puis les groupes retrouvent tous deux un lag total de 0 après le message
   valide suivant.
-- Une réservation de 3 places calcule `149.70 EUR` et publie `PaymentRejected`; elle reste
+- Une réservation de 3 places calcule `149.70 EUR` et publie `PaymentFailed`; elle restait
   `PENDING` conformément à la frontière entre TP05 et TP06.

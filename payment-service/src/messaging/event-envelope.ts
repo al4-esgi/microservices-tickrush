@@ -13,12 +13,14 @@ export interface SeatReservedPayload {
   quantity: number;
   unitPrice: number;
   amount: number;
+  expiresAt: string;
 }
 
 export interface PaymentResultPayload {
   paymentId: string;
   reservationId: string;
   amount: number;
+  reason?: string;
 }
 
 const UUID_PATTERN =
@@ -85,13 +87,25 @@ export function parseSeatReservedPayload(
     throw new Error('quantity doit etre un entier');
   }
 
+  const unitPrice = requirePositiveNumber(payload.unitPrice, 'unitPrice');
+  const amount = requirePositiveNumber(payload.amount, 'amount');
+  if (Math.round(unitPrice * 100) * quantity !== Math.round(amount * 100)) {
+    throw new Error('amount doit etre egal a unitPrice multiplie par quantity');
+  }
+
+  const expiresAt = requireString(payload.expiresAt, 'expiresAt');
+  if (Number.isNaN(Date.parse(expiresAt))) {
+    throw new Error('expiresAt doit etre une date ISO-8601');
+  }
+
   return {
     reservationId: requireUuid(payload.reservationId, 'reservationId'),
     eventId: requireUuid(payload.eventId, 'eventId metier'),
     customerRef: requireString(payload.customerRef, 'customerRef'),
     quantity,
-    unitPrice: requirePositiveNumber(payload.unitPrice, 'unitPrice'),
-    amount: requirePositiveNumber(payload.amount, 'amount'),
+    unitPrice,
+    amount,
+    expiresAt,
   };
 }
 

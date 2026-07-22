@@ -32,14 +32,36 @@ class ReservationTest {
     }
 
     @Test
-    void markPaidTransitionsOnlyAPendingReservation() {
+    void issueTicketTransitionsOnlyOnceAndKeepsTheSameTicketId() {
         Reservation reservation = Reservation.open(
                 UUID.randomUUID(), "client@test.fr", 1,
                 new BigDecimal("20.00"), Duration.ofMinutes(2));
 
-        reservation.markPaid();
-        reservation.markPaid();
+        assertThat(reservation.issueTicket()).isTrue();
+        UUID ticketId = reservation.getTicketId();
+        assertThat(reservation.issueTicket()).isFalse();
 
-        assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.PAID);
+        assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.TICKET_ISSUED);
+        assertThat(reservation.getTicketId()).isEqualTo(ticketId);
+        assertThat(reservation.getTicketIssuedAt()).isNotNull();
+    }
+
+    @Test
+    void expirationAndPaymentFailureAreIdempotentCompensatingTransitions() {
+        Reservation expired = Reservation.open(
+                UUID.randomUUID(), "client@test.fr", 1,
+                new BigDecimal("20.00"), Duration.ofMinutes(2));
+        Reservation cancelled = Reservation.open(
+                UUID.randomUUID(), "client@test.fr", 1,
+                new BigDecimal("20.00"), Duration.ofMinutes(2));
+
+        assertThat(expired.expire(expired.getExpiresAt())).isTrue();
+        assertThat(expired.expire(expired.getExpiresAt().plusSeconds(1))).isFalse();
+        assertThat(expired.cancelAfterPaymentFailure()).isFalse();
+        assertThat(cancelled.cancelAfterPaymentFailure()).isTrue();
+        assertThat(cancelled.cancelAfterPaymentFailure()).isFalse();
+
+        assertThat(expired.getStatus()).isEqualTo(ReservationStatus.EXPIRED);
+        assertThat(cancelled.getStatus()).isEqualTo(ReservationStatus.CANCELLED);
     }
 }

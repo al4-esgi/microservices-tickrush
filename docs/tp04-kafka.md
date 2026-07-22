@@ -24,7 +24,7 @@ initiale au bootstrap réussit mais les échanges suivants échouent.
 |---|---|---|
 | `booking.seat-reserved` | `reservationId` | le cycle de vie d'une réservation (choix final TP5) |
 | `booking.reservation-expired` | `reservationId` | une réservation |
-| `booking.seat-released` | `eventId` | le stock d'un événement |
+| `booking.seat-released` | `reservationId` | la compensation d'une réservation |
 | `booking.ticket-issued` | `reservationId` | une réservation |
 | `payment.received` | `reservationId` | un paiement |
 | `payment.rejected` | `reservationId` | un paiement |

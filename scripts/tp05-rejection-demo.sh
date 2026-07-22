@@ -13,7 +13,7 @@ test -n "${reservation_id}"
 printf '%s' "${reservation}" | grep -q '"amount":149.70'
 echo "   reservationId=${reservation_id}, amount=149.70"
 
-echo "2. Attente de PaymentRejected"
+echo "2. Attente de PaymentFailed et de la compensation TP06"
 payment_status=""
 for _ in $(seq 1 20); do
   payment_status="$(curl --fail-with-body -sS \
@@ -25,8 +25,15 @@ for _ in $(seq 1 20); do
 done
 printf '%s' "${payment_status}" | grep -q 'REJECTED'
 
-current="$(curl --fail-with-body -sS "${BASE_URL}/reservations/${reservation_id}")"
-printf '%s' "${current}" | grep -q '"status":"PENDING"'
-echo "   paiement REJECTED, réservation encore PENDING (compensation prévue au TP06)"
+current=""
+for _ in $(seq 1 20); do
+  current="$(curl --fail-with-body -sS "${BASE_URL}/reservations/${reservation_id}")"
+  if printf '%s' "${current}" | grep -q '"status":"CANCELLED"'; then
+    break
+  fi
+  sleep 1
+done
+printf '%s' "${current}" | grep -q '"status":"CANCELLED"'
+echo "   paiement REJECTED, réservation CANCELLED et places libérées"
 
 echo "TP05 refus contrôlé: OK"

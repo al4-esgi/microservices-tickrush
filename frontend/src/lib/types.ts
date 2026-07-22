@@ -1,4 +1,4 @@
-export type ReservationStatus = 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED'
+export type ReservationStatus = 'PENDING' | 'PAID' | 'TICKET_ISSUED' | 'EXPIRED' | 'CANCELLED'
 
 export interface EventDto {
   id: string
@@ -18,6 +18,8 @@ export interface ReservationDto {
   status: ReservationStatus
   expiresAt: string
   createdAt: string
+  ticketId: string | null
+  ticketIssuedAt: string | null
 }
 
 export interface PaymentDto {

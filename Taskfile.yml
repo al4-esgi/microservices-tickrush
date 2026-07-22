@@ -145,7 +145,7 @@ tasks:
         echo "Ingress Traefik  ->  http://localhost:8081"
         echo "   booking : GET /events/{id} | POST /reservations | GET /reservations/{id}"
         echo "   payment : POST /payments"
-        echo "   notif   : POST /notifications/ticket-issued"
+        echo "   notif   : consumer Kafka TicketIssued/ReservationExpired + endpoint HTTP de diagnostic"
         echo ""
         echo "MailDev (emails) : task forward  puis  http://localhost:1080"
         echo "Bases (via task forward) : booking-db localhost:5432 | payment-db localhost:5433"
@@ -224,11 +224,11 @@ tasks:
 
   # ============ Kafka / TP4 ============
   kafka:topics:
-    desc: "Lister et décrire les huit topics métier et dead-letter TickRush"
+    desc: "Lister et décrire les onze topics métier et dead-letter TickRush"
     cmds:
       - kubectl -n {{.NS}} exec deployment/kafka -- /opt/kafka/bin/kafka-topics.sh --bootstrap-server {{.KAFKA_BOOTSTRAP}} --list
       - |
-        for topic in booking.seat-reserved booking.reservation-expired booking.seat-released booking.ticket-issued payment.received payment.rejected booking.seat-reserved.DLQ payment.received.DLT; do
+        for topic in booking.seat-reserved booking.reservation-expired booking.seat-released booking.ticket-issued payment.received payment.rejected booking.seat-reserved.DLQ payment.received.DLT payment.rejected.DLT booking.ticket-issued.DLT booking.reservation-expired.DLT; do
           kubectl -n {{.NS}} exec deployment/kafka -- /opt/kafka/bin/kafka-topics.sh \
             --bootstrap-server {{.KAFKA_BOOTSTRAP}} --describe --topic "$topic"
         done
@@ -298,7 +298,7 @@ tasks:
 
   # ============ Pipeline événementiel / TP5 ============
   tp5:demo:
-    desc: "Prouver POST -> SeatReserved -> PaymentReceived -> PAID puis le rejeu idempotent"
+    desc: "Prouver POST -> SeatReserved -> PaymentReceived puis le rejeu idempotent"
     cmds:
       - bash scripts/tp05-demo.sh
 
@@ -312,9 +312,25 @@ tasks:
     cmds:
       - bash scripts/tp05-rejection-demo.sh
 
+  # ============ Saga chorégraphiée / TP6 ============
+  tp6:demo:
+    desc: "Démontrer TicketIssued, PaymentFailed, compensation et rejeu idempotent"
+    cmds:
+      - bash scripts/tp06-saga-demo.sh
+
+  tp6:ttl:
+    desc: "Démontrer l'expiration TTL et la remise en stock (configuration restaurée ensuite)"
+    cmds:
+      - bash scripts/tp06-ttl-demo.sh
+
+  tp6:chaos:
+    desc: "Démontrer la reprise de saga après indisponibilité de payment-service"
+    cmds:
+      - bash scripts/tp06-chaos-demo.sh
+
   # ============ Test rapide ============
   smoke:
-    desc: "Scénario nominal TP5 : une réservation est payée automatiquement via Kafka"
+    desc: "Scénario nominal TP6 : une réservation reçoit automatiquement son billet"
     silent: true
     cmds:
       - |
@@ -322,16 +338,17 @@ tasks:
         E=11111111-1111-1111-1111-111111111111
         echo "-> événement :"; curl -s localhost:8081/events/$E; echo
         R=$(curl --fail-with-body -s -X POST localhost:8081/reservations -H 'Content-Type: application/json' \
-              -d "{\"eventId\":\"$E\",\"customerRef\":\"smoke\",\"quantity\":1}")
+              -d "{\"eventId\":\"$E\",\"customerRef\":\"smoke@esgi.fr\",\"quantity\":1}")
         echo "-> réservation : $R"
         RID=$(echo "$R" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
         test -n "$RID"
         for i in $(seq 1 20); do
           CURRENT=$(curl --fail-with-body -s localhost:8081/reservations/$RID)
-          echo "$CURRENT" | grep -q '"status":"PAID"' && break
+          echo "$CURRENT" | grep -q '"status":"TICKET_ISSUED"' && break
           sleep 1
         done
-        echo "$CURRENT" | grep -q '"status":"PAID"'
+        echo "$CURRENT" | grep -q '"status":"TICKET_ISSUED"'
+        echo "$CURRENT" | grep -Eq '"ticketId":"[0-9a-f-]{36}"'
         echo "-> pipeline Kafka terminé : $CURRENT"
         PAYMENT=$(curl --fail-with-body -s localhost:8081/reservations/$RID/payment-status)
         echo "$PAYMENT" | grep -q 'RECEIVED'

@@ -33,6 +33,9 @@ export class PaymentEntity {
   @Column({ type: 'varchar', length: 16 })
   status!: PaymentStatus;
 
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  failureReason!: string | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;
 }

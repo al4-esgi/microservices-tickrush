@@ -16,12 +16,15 @@ public record ReservationResponse(
         BigDecimal amount,
         ReservationStatus status,
         Instant expiresAt,
-        Instant createdAt
+        Instant createdAt,
+        UUID ticketId,
+        Instant ticketIssuedAt
 ) {
     public static ReservationResponse from(Reservation r) {
         return new ReservationResponse(
                 r.getId(), r.getEventId(), r.getCustomerRef(), r.getQuantity(),
                 r.getUnitPrice(), r.getAmount(),
-                r.getStatus(), r.getExpiresAt(), r.getCreatedAt());
+                r.getStatus(), r.getExpiresAt(), r.getCreatedAt(),
+                r.getTicketId(), r.getTicketIssuedAt());
     }
 }

@@ -15,8 +15,7 @@ import java.util.UUID;
 
 /**
  * Agrégat Réservation — N places réservées pour un événement, en attente de paiement.
- * Porte le TTL ({@code expiresAt}) : une réservation PENDING non payée à échéance
- * sera expirée et ses places libérées (séance ultérieure : scheduler + événement Kafka).
+ * Porte le TTL ({@code expiresAt}) et les transitions de la saga de billetterie.
  */
 @Entity
 @Table(name = "reservations")
@@ -60,6 +59,10 @@ public class Reservation {
     @Column(nullable = false)
     private Instant createdAt;
 
+    private UUID ticketId;
+
+    private Instant ticketIssuedAt;
+
     protected Reservation() {
         // requis par JPA
     }
@@ -84,14 +87,39 @@ public class Reservation {
         return r;
     }
 
-    public void markPaid() {
-        if (status == ReservationStatus.PAID) {
-            return;
+    /** Émet un seul billet, même si plusieurs résultats de paiement sont livrés. */
+    public boolean issueTicket() {
+        if (status == ReservationStatus.TICKET_ISSUED) {
+            return false;
+        }
+        if (status != ReservationStatus.PENDING && status != ReservationStatus.PAID) {
+            throw new IllegalStateException("Une reservation " + status + " ne peut pas emettre de billet");
+        }
+        status = ReservationStatus.TICKET_ISSUED;
+        ticketId = UUID.randomUUID();
+        ticketIssuedAt = Instant.now();
+        return true;
+    }
+
+    /** Compense un refus de paiement. EXPIRED/CANCELLED signifie que le stock est déjà restauré. */
+    public boolean cancelAfterPaymentFailure() {
+        if (status == ReservationStatus.CANCELLED || status == ReservationStatus.EXPIRED) {
+            return false;
         }
         if (status != ReservationStatus.PENDING) {
-            throw new IllegalStateException("Une reservation " + status + " ne peut pas etre payee");
+            throw new IllegalStateException("Une reservation " + status + " ne peut pas etre annulee");
         }
-        status = ReservationStatus.PAID;
+        status = ReservationStatus.CANCELLED;
+        return true;
+    }
+
+    /** Expire uniquement une réservation encore en attente dont l'échéance est atteinte. */
+    public boolean expire(Instant now) {
+        if (status != ReservationStatus.PENDING || expiresAt.isAfter(now)) {
+            return false;
+        }
+        status = ReservationStatus.EXPIRED;
+        return true;
     }
 
     public UUID getId() {
@@ -128,5 +156,13 @@ public class Reservation {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public UUID getTicketId() {
+        return ticketId;
+    }
+
+    public Instant getTicketIssuedAt() {
+        return ticketIssuedAt;
     }
 }

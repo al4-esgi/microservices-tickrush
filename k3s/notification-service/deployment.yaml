@@ -28,6 +28,12 @@ spec:
               value: "1025"
             - name: MAIL_FROM
               value: noreply@tickrush.local
+            - name: KAFKA_ENABLED
+              value: "true"
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: kafka:29092
+            - name: KAFKA_GROUP_ID
+              value: notification-service
           readinessProbe:
             httpGet:
               path: /health

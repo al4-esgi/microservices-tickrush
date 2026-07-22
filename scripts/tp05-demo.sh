@@ -17,13 +17,13 @@ echo "2. Attente du pipeline SeatReserved -> PaymentReceived"
 current=""
 for _ in $(seq 1 20); do
   current="$(curl --fail-with-body -sS "${BASE_URL}/reservations/${reservation_id}")"
-  if printf '%s' "${current}" | grep -q '"status":"PAID"'; then
+  if printf '%s' "${current}" | grep -q '"status":"TICKET_ISSUED"'; then
     break
   fi
   sleep 1
 done
-printf '%s' "${current}" | grep -q '"status":"PAID"'
-echo "   réservation PAID"
+printf '%s' "${current}" | grep -q '"status":"TICKET_ISSUED"'
+echo "   réservation TICKET_ISSUED"
 
 payment_status="$(curl --fail-with-body -sS \
   "${BASE_URL}/reservations/${reservation_id}/payment-status")"
@@ -57,8 +57,8 @@ marker_count="$(kubectl -n "${NAMESPACE}" exec deployment/booking-db -- \
   -c "SELECT count(*) FROM processed_events WHERE event_id = '${payment_id}';")"
 test "${marker_count}" = "1"
 after_replay="$(curl --fail-with-body -sS "${BASE_URL}/reservations/${reservation_id}")"
-printf '%s' "${after_replay}" | grep -q '"status":"PAID"'
-echo "   processed_events=${marker_count}, statut toujours PAID"
+printf '%s' "${after_replay}" | grep -q '"status":"TICKET_ISSUED"'
+echo "   processed_events=${marker_count}, statut toujours TICKET_ISSUED"
 
 kubectl -n "${NAMESPACE}" logs deployment/booking-service --since=30s | \
   grep "Evenement deja traite: eventId=${payment_id}" | tail -1

@@ -23,6 +23,7 @@ describe('PaymentsService', () => {
     reservationId: dto.reservationId,
     amount: dto.amount,
     status: 'RECEIVED',
+    failureReason: null,
     createdAt: new Date('2026-07-21T15:00:00Z'),
   };
 
@@ -68,6 +69,7 @@ describe('PaymentsService', () => {
       reservationId: dto.reservationId,
       amount: dto.amount,
       status: 'RECEIVED',
+      failureReason: null,
     });
     expect(repo.save).toHaveBeenCalledWith(payment);
   });
@@ -91,7 +93,11 @@ describe('PaymentsService', () => {
   });
 
   it('can deterministically simulate a rejected payment', async () => {
-    const rejected: PaymentEntity = { ...payment, status: 'REJECTED' };
+    const rejected: PaymentEntity = {
+      ...payment,
+      status: 'REJECTED',
+      failureReason: 'SIMULATED_FAILURE',
+    };
     process.env.PAYMENT_FAILURE_RATE = '1';
     jest.spyOn(Math, 'random').mockReturnValue(0);
     repo.findOne.mockResolvedValue(null);
@@ -109,6 +115,7 @@ describe('PaymentsService', () => {
       ...payment,
       amount: expensiveDto.amount,
       status: 'REJECTED',
+      failureReason: 'AMOUNT_THRESHOLD',
     };
     repo.findOne.mockResolvedValue(null);
     repo.create.mockReturnValue(rejected);
@@ -120,6 +127,27 @@ describe('PaymentsService', () => {
       reservationId: expensiveDto.reservationId,
       amount: 149.7,
       status: 'REJECTED',
+      failureReason: 'AMOUNT_THRESHOLD',
+    });
+  });
+
+  it('persists a forced failure reason for an expired reservation', async () => {
+    const rejected: PaymentEntity = {
+      ...payment,
+      status: 'REJECTED',
+      failureReason: 'RESERVATION_EXPIRED',
+    };
+    repo.findOne.mockResolvedValue(null);
+    repo.create.mockReturnValue(rejected);
+    repo.save.mockResolvedValue(rejected);
+
+    await service.authorize(dto, 'RESERVATION_EXPIRED');
+
+    expect(repo.create).toHaveBeenCalledWith({
+      reservationId: dto.reservationId,
+      amount: dto.amount,
+      status: 'REJECTED',
+      failureReason: 'RESERVATION_EXPIRED',
     });
   });
 

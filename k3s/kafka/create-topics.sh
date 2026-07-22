@@ -13,6 +13,9 @@ topics=(
   payment.rejected
   booking.seat-reserved.DLQ
   payment.received.DLT
+  payment.rejected.DLT
+  booking.ticket-issued.DLT
+  booking.reservation-expired.DLT
 )
 
 echo "Waiting for Kafka at ${BOOTSTRAP_SERVER}..."

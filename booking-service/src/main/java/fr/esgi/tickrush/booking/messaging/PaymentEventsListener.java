@@ -36,17 +36,25 @@ public class PaymentEventsListener {
     }
 
     @KafkaListener(
-            topics = "${tickrush.kafka.topics.payment-received}",
+            topics = {
+                    "${tickrush.kafka.topics.payment-received}",
+                    "${tickrush.kafka.topics.payment-failed}"
+            },
             groupId = "${spring.kafka.consumer.group-id}"
     )
-    public void onPaymentReceived(ConsumerRecord<String, String> record) throws Exception {
+    public void onPaymentEvent(ConsumerRecord<String, String> record) throws Exception {
         EventEnvelope<JsonNode> genericEvent = objectMapper.readValue(record.value(), genericEnvelopeType);
         validateBaseEnvelope(genericEvent);
 
-        if (!"PaymentReceived".equals(genericEvent.eventType())) {
-            log.debug("Type ignore sur payment.received: {}", genericEvent.eventType());
-            return;
+        switch (genericEvent.eventType()) {
+            case "PaymentReceived" -> processPaymentReceived(record, genericEvent);
+            case "PaymentFailed", "PaymentRejected" -> processPaymentFailed(record, genericEvent);
+            default -> log.debug("Type ignore sur {}: {}", record.topic(), genericEvent.eventType());
         }
+    }
+
+    private void processPaymentReceived(ConsumerRecord<String, String> record,
+                                        EventEnvelope<JsonNode> genericEvent) throws Exception {
         PaymentReceivedPayload payload = objectMapper.treeToValue(
                 genericEvent.payload(), PaymentReceivedPayload.class);
         EventEnvelope<PaymentReceivedPayload> event = new EventEnvelope<>(
@@ -57,10 +65,24 @@ public class PaymentEventsListener {
                 payload
         );
         validatePaymentPayload(event);
-        if (!event.aggregateId().toString().equals(record.key())) {
-            throw new IllegalArgumentException("La cle Kafka doit etre egale a aggregateId");
-        }
+        validateKey(record, event.aggregateId());
         processor.processPaymentReceived(event);
+    }
+
+    private void processPaymentFailed(ConsumerRecord<String, String> record,
+                                      EventEnvelope<JsonNode> genericEvent) throws Exception {
+        PaymentFailedPayload payload = objectMapper.treeToValue(
+                genericEvent.payload(), PaymentFailedPayload.class);
+        EventEnvelope<PaymentFailedPayload> event = new EventEnvelope<>(
+                genericEvent.eventId(),
+                "PaymentFailed",
+                genericEvent.occurredAt(),
+                genericEvent.aggregateId(),
+                payload
+        );
+        validatePaymentFailedPayload(event);
+        validateKey(record, event.aggregateId());
+        processor.processPaymentFailed(event);
     }
 
     private void validateBaseEnvelope(EventEnvelope<JsonNode> event) {
@@ -79,6 +101,26 @@ public class PaymentEventsListener {
         Objects.requireNonNull(payload.amount(), "amount obligatoire");
         if (!aggregateId.equals(payload.reservationId())) {
             throw new IllegalArgumentException("aggregateId et reservationId doivent etre identiques");
+        }
+    }
+
+    private void validatePaymentFailedPayload(EventEnvelope<PaymentFailedPayload> event) {
+        UUID aggregateId = event.aggregateId();
+        PaymentFailedPayload payload = Objects.requireNonNull(event.payload(), "payload obligatoire");
+        Objects.requireNonNull(payload.paymentId(), "paymentId obligatoire");
+        Objects.requireNonNull(payload.reservationId(), "reservationId obligatoire");
+        Objects.requireNonNull(payload.amount(), "amount obligatoire");
+        if (payload.reason() == null || payload.reason().isBlank()) {
+            throw new IllegalArgumentException("reason obligatoire");
+        }
+        if (!aggregateId.equals(payload.reservationId())) {
+            throw new IllegalArgumentException("aggregateId et reservationId doivent etre identiques");
+        }
+    }
+
+    private void validateKey(ConsumerRecord<String, String> record, UUID aggregateId) {
+        if (!aggregateId.toString().equals(record.key())) {
+            throw new IllegalArgumentException("La cle Kafka doit etre egale a aggregateId");
         }
     }
 }

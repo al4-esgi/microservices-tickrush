@@ -3,7 +3,7 @@ package fr.esgi.tickrush.booking.domain;
 import fr.esgi.tickrush.booking.repository.EventRepository;
 import fr.esgi.tickrush.booking.repository.ReservationRepository;
 import fr.esgi.tickrush.booking.messaging.EventEnvelope;
-import fr.esgi.tickrush.booking.messaging.SeatReservedApplicationEvent;
+import fr.esgi.tickrush.booking.messaging.BookingApplicationEvent;
 import fr.esgi.tickrush.booking.messaging.SeatReservedPayload;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
@@ -57,9 +57,10 @@ public class ReservationService {
                 reservation.getCustomerRef(),
                 reservation.getQuantity(),
                 reservation.getUnitPrice(),
-                reservation.getAmount()
+                reservation.getAmount(),
+                reservation.getExpiresAt()
         );
-        applicationEvents.publishEvent(new SeatReservedApplicationEvent(
+        applicationEvents.publishEvent(new BookingApplicationEvent<>(
                 EventEnvelope.create("SeatReserved", reservation.getId(), payload)));
         return reservation;
     }

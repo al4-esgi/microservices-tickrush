@@ -32,13 +32,15 @@ class EventTest {
     }
 
     @Test
-    void releaseNeverExceedsTheTotalStock() {
+    void releaseRejectsAnOverflowInsteadOfHidingADuplicateCompensation() {
         Event event = new Event(EVENT_ID, "Concert", 5, new BigDecimal("49.90"));
         event.reserve(4);
 
-        event.release(10);
+        assertThatThrownBy(() -> event.release(10))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("depasserait le stock total");
 
-        assertThat(event.getAvailableSeats()).isEqualTo(5);
+        assertThat(event.getAvailableSeats()).isEqualTo(1);
     }
 
     @Test

@@ -22,8 +22,8 @@ import {
 } from './event-envelope';
 import {
   KAFKA_CLIENT,
+  PAYMENT_FAILED_TOPIC,
   PAYMENT_RECEIVED_TOPIC,
-  PAYMENT_REJECTED_TOPIC,
   SEAT_RESERVED_TOPIC,
 } from './kafka.constants';
 
@@ -136,16 +136,20 @@ export class KafkaPipelineService implements OnModuleInit, OnModuleDestroy {
       throw new Error('aggregateId et reservationId doivent etre identiques');
     }
 
-    const { payment } = await this.payments.authorize({
-      reservationId: payload.reservationId,
-      amount: payload.amount,
-    });
+    const expired = Date.parse(payload.expiresAt) <= Date.now();
+    const { payment } = await this.payments.authorize(
+      {
+        reservationId: payload.reservationId,
+        amount: payload.amount,
+      },
+      expired ? 'RESERVATION_EXPIRED' : undefined,
+    );
     const eventType =
-      payment.status === 'RECEIVED' ? 'PaymentReceived' : 'PaymentRejected';
+      payment.status === 'RECEIVED' ? 'PaymentReceived' : 'PaymentFailed';
     const topic =
       payment.status === 'RECEIVED'
         ? PAYMENT_RECEIVED_TOPIC
-        : PAYMENT_REJECTED_TOPIC;
+        : PAYMENT_FAILED_TOPIC;
     const response = createEnvelope<PaymentResultPayload>(
       payment.id,
       eventType,
@@ -154,6 +158,7 @@ export class KafkaPipelineService implements OnModuleInit, OnModuleDestroy {
         paymentId: payment.id,
         reservationId: payload.reservationId,
         amount: payment.amount,
+        ...(payment.failureReason ? { reason: payment.failureReason } : {}),
       },
     );
 

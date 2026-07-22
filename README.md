@@ -35,9 +35,9 @@ forte charge, et ne jamais dupliquer ni perdre un paiement.
 
 | Service | Langage | Rôle |
 |---|---|---|
-| `booking-service` | Java / Spring Boot 3.5 (JDK 21) | Réservation, stock, producer `SeatReserved`, consumer idempotent `PaymentReceived` |
-| `payment-service` | Node.js / TypeScript (NestJS 11) | Consumer `SeatReserved`, paiement persistant, producer du résultat, DLQ |
-| `notification-service` | Python / FastAPI | Confirmation par « email » (capté par **MailDev**) — _bonus, 3ᵉ langage_ |
+| `booking-service` | Java / Spring Boot 3.5 (JDK 21) | Réservation, stock, TTL, billet et compensation idempotente |
+| `payment-service` | Node.js / TypeScript (NestJS 11) | Consumer `SeatReserved`, paiement persistant, résultat et DLQ |
+| `notification-service` | Python / FastAPI | Consumer des faits finaux et emails MailDev — _bonus, 3ᵉ langage_ |
 
 **Endpoints REST** (détails dans [docs/decoupage.md](docs/decoupage.md)) :
 - booking : `POST /reservations`, `GET /reservations/{id}`, `GET /reservations/{id}/payment-status`, `GET /events/{id}`
@@ -45,32 +45,35 @@ forte charge, et ne jamais dupliquer ni perdre un paiement.
 
 **Communication inter-services** : le flux métier principal est désormais asynchrone.
 `booking-service` publie `SeatReserved`, `payment-service` l'encaisse puis répond par
-`PaymentReceived`; `booking-service` passe alors la réservation à `PAID`. Les pods joignent
-Kafka par le DNS Kubernetes `kafka:29092`. L'appel HTTP protégé par circuit breaker reste un
-endpoint de consultation du statut et démontre la résilience synchrone du TP3.
+`PaymentReceived` ou `PaymentFailed`; `booking-service` émet alors le billet ou restaure le
+stock. `notification-service` reçoit les faits finaux. Les pods joignent Kafka par le DNS
+Kubernetes `kafka:29092`. L'appel HTTP protégé par circuit breaker reste un endpoint de
+consultation du statut et démontre la résilience synchrone du TP3.
 
-**Pattern avancé retenu** (recommandé pour le sujet, à documenter en ADR séance 7) :
-réservation avec **TTL** + **Outbox** (émission fiable de `SeatReserved`) +
-**idempotence** du consommateur de paiement. Le piège traité : la **concurrence sur le
-stock** (verrou optimiste ou contrainte SQL) et les **doublons de messages**.
+**Pattern avancé retenu** : **saga chorégraphiée** avec compensation du stock, TTL et
+idempotence transactionnelle. Le choix est justifié dans
+[`ADR-001`](docs/adr/001-choregraphie-vs-orchestration.md). L'Outbox du TP07 supprimera la
+fenêtre de dual-write restante.
 
-### État fonctionnel après le TP5
+### État fonctionnel après le TP6
 
 - Réservation et décrément du stock atomiques, verrou optimiste avec retries bornés et test
   concurrent de non-survente.
 - Paiement persistant et idempotent, y compris en cas de requêtes concurrentes.
 - Appel HTTP inter-services protégé par timeout, circuit breaker et fallback métier.
-- Kafka KRaft, Kafka UI, 6 topics métier et 2 topics morts à 3 partitions.
-- Pipeline `POST → SeatReserved → PaymentReceived → PAID`, enveloppe polyglotte et clé
-  `reservationId` démontrables.
+- Kafka KRaft, Kafka UI, 6 topics métier et 5 topics morts à 3 partitions.
+- Chemin nominal `SeatReserved → PaymentReceived → TicketIssued`, avec `ticketId` persistant.
+- Chemin compensé `SeatReserved → PaymentFailed → SeatReleased`; le stock avant/après est
+  identique et un rejeu ne libère jamais deux fois.
+- Expiration automatique `PENDING → EXPIRED`, restauration du stock et refus d'un encaissement
+  arrivé après `expiresAt`.
 - Déduplication `processed_events` atomique avec l'effet métier, testée par rejeu du même
   `eventId`.
 - Trois traitements bornés puis DLQ/DLT des deux côtés; un poison pill ne bloque pas la suite.
-- Notification HTTP et MailDev disponibles comme bonus.
+- Notification Kafka des billets et expirations, capturée dans MailDev.
 
-`PaymentRejected` est déjà publié pour un montant supérieur à 100 EUR. La compensation du
-stock, l'expiration automatique, l'émission du billet et les notifications Kafka restent au
-périmètre du TP6. L'Outbox remplacera le dual-write au TP7.
+La saga, sa version orchestrée et la démonstration sont détaillées dans
+[`docs/saga.md`](docs/saga.md). L'Outbox remplacera le dual-write au TP7.
 
 ---
 
@@ -89,13 +92,16 @@ Le plus simple : un [`Taskfile.yml`](Taskfile.yml) orchestre tout ([go-task](htt
 task up          # cluster k3d + build + import images + déploiement complet
 task status      # pods / services / ingress
 task test        # tests Java, Jest, FastAPI, lint et builds
-task smoke       # scénario nominal TP5 via l'Ingress et Kafka
+task smoke       # scénario nominal TP6 via l'Ingress et Kafka
 task tp5:demo    # pipeline complet + preuve du rejeu idempotent
 task tp5:poison  # 3 tentatives puis DLQ Node et DLT Java
 task tp5:rejection # paiement à 149,70 EUR refusé de façon déterministe
+task tp6:demo    # succès + compensation mesurée + rejeu idempotent
+task tp6:ttl     # expiration et remise en stock, configuration restaurée ensuite
+task tp6:chaos   # reprise automatique après arrêt du payment-service
 task demo:reset  # remettre stocks, réservations et paiements à zéro (avec confirmation)
 task front       # console de démo React (http://localhost:5173)
-task kafka:topics        # lister et décrire les 8 topics
+task kafka:topics        # lister et décrire les 11 topics
 task kafka:produce-demo  # produire 10 messages avec 3 clés
 task kafka:consume-demo  # afficher clé, partition et offset
 task kafka:lag-demo      # créer puis observer le lag d'un groupe
@@ -115,7 +121,7 @@ Kafka utilise deux listeners : `INTERNAL` annonce `kafka:29092` aux pods du clus
 `EXTERNAL` annonce `localhost:9092` aux clients du poste via `task kafka:forward`. Les
 adresses annoncées doivent être réellement joignables par le client Kafka.
 
-Les six topics métier et les deux topics morts sont créés par le Job `kafka-init` depuis le script versionné
+Les six topics métier et les cinq topics morts sont créés par le Job `kafka-init` depuis le script versionné
 [`k3s/kafka/create-topics.sh`](k3s/kafka/create-topics.sh), avec **3 partitions** et un
 facteur de réplication **RF=1**. Trois partitions autorisent au maximum trois consommateurs
 actifs dans un même groupe. RF=1 est uniquement acceptable pour ce cluster local mono-broker;
@@ -145,15 +151,29 @@ du concert ou match reste `payload.eventId`. Le prix unitaire est figé dans la 
 le montant vaut `unitPrice × quantity`.
 
 ```bash
-task tp5:demo    # crée, attend PAID, rejoue PaymentReceived, vérifie processed_events=1
+task tp5:demo    # crée, attend le résultat, rejoue PaymentReceived, vérifie processed_events=1
 task tp5:poison  # injecte deux JSON invalides et contrôle les topics morts
 task tp5:rejection # prépare le chemin d'échec de la saga TP6
 ```
 
-Le consumer Java insère l'`eventId` dans `processed_events` et passe la réservation à `PAID`
-au sein de la même transaction PostgreSQL. Côté Node comme côté Java, trois échecs conduisent
+À la frontière du TP05, le consumer Java insérait l'`eventId` dans `processed_events` et
+passait la réservation à `PAID` dans la même transaction PostgreSQL. Côté Node comme côté Java, trois échecs conduisent
 à `booking.seat-reserved.DLQ` ou `payment.received.DLT`, puis l'offset suivant peut être traité.
 Le protocole détaillé est dans [`docs/tp05-pipeline.md`](docs/tp05-pipeline.md).
+
+### Démo saga chorégraphiée - TP6
+
+```bash
+task tp6:demo   # chemin heureux, compensation, stock avant/après et rejeu
+task tp6:ttl    # TTL accéléré à 5 s pour la preuve, puis retour automatique à 120 s
+task tp6:chaos  # arrêt du paiement, réservation, redémarrage et reprise Kafka
+```
+
+Le succès termine à `TICKET_ISSUED`; un refus termine à `CANCELLED`; un timeout termine à
+`EXPIRED`. `CANCELLED` et `EXPIRED` restaurent les places dans une transaction locale avant
+de publier `SeatReleased`. Le marker `processed_events`, les verrous de réservation et les
+transitions métier rendent étapes et compensations idempotentes. Le service Python consomme
+`TicketIssued` et `ReservationExpired`, puis envoie les emails vers MailDev.
 
 ### Tout déployer dans le cluster (démo de soutenance)
 
@@ -179,9 +199,9 @@ kubectl -n tickrush wait --for=condition=complete job/kafka-init --timeout=180s
 kubectl apply -f k3s/payment-service/ -f k3s/booking-service/ -f k3s/notification-service/
 kubectl -n tickrush rollout status deployment/booking-service
 
-# 5. Démontrer le pipeline via la façade Traefik
+# 5. Démontrer la saga via la façade Traefik
 curl localhost:8081/events/11111111-1111-1111-1111-111111111111
-task tp5:demo
+task tp6:demo
 
 # L'endpoint HTTP de paiement reste disponible pour le TP3 et le diagnostic
 curl -X POST localhost:8081/payments -H 'Content-Type: application/json' \
@@ -282,9 +302,10 @@ Preuve dans les logs (`kubectl -n tickrush logs deployment/booking-service`) : d
 microservices-tickrush/
 ├── README.md
 ├── docs/
-│   ├── adr/              # Architecture Decision Records (séance 7)
+│   ├── adr/              # ADR de la saga chorégraphiée
 │   ├── decoupage.md      # Event Storming (contextes, contrats)
 │   ├── tp04-kafka.md     # démonstration partitions, offsets, lag et rebalance
+│   ├── saga.md           # saga réelle et esquisse orchestrée
 │   └── tp05-pipeline.md  # pipeline, idempotence, retries et dead-letter topics
 ├── k3s/                  # manifests Kubernetes (remplace docker-compose)
 │   ├── namespace.yaml
@@ -297,6 +318,6 @@ microservices-tickrush/
 │   └── notification-service/  # deployment + service + ingress (image tickrush/notification-service)
 ├── booking-service/      # service Java — Spring Boot 3.5, JDK 21
 ├── payment-service/      # service Node/TS — NestJS 11
-├── scripts/              # scénarios reproductibles TP4/TP5
-└── notification-service/ # service Python — FastAPI (envoi email via MailDev)
+├── scripts/              # scénarios reproductibles TP4/TP5/TP6
+└── notification-service/ # service Python — consumer Kafka + FastAPI + MailDev
 ```

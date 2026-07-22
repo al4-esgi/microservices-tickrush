@@ -22,6 +22,7 @@ export class PaymentsService {
 
   async authorize(
     dto: CreatePaymentDto,
+    forcedFailureReason?: string,
   ): Promise<{ payment: PaymentEntity; created: boolean }> {
     const existing = await this.repo.findOne({
       where: { reservationId: dto.reservationId },
@@ -34,15 +35,18 @@ export class PaymentsService {
     const rejectionThreshold = Number(
       process.env.PAYMENT_REJECTION_THRESHOLD ?? '100',
     );
-    const status: PaymentStatus =
-      dto.amount > rejectionThreshold || Math.random() < failureRate
-        ? 'REJECTED'
-        : 'RECEIVED';
+    const randomFailure = Math.random() < failureRate;
+    const failureReason =
+      forcedFailureReason ??
+      (dto.amount > rejectionThreshold ? 'AMOUNT_THRESHOLD' : undefined) ??
+      (randomFailure ? 'SIMULATED_FAILURE' : undefined);
+    const status: PaymentStatus = failureReason ? 'REJECTED' : 'RECEIVED';
 
     const entity = this.repo.create({
       reservationId: dto.reservationId,
       amount: dto.amount,
       status,
+      failureReason: failureReason ?? null,
     });
 
     try {

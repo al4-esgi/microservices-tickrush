@@ -47,7 +47,7 @@ class PaymentEventsListenerTest {
         ConsumerRecord<String, String> record = new ConsumerRecord<>(
                 "payment.received", 0, 1L, reservationId.toString(), objectMapper.writeValueAsString(event));
 
-        listener.onPaymentReceived(record);
+        listener.onPaymentEvent(record);
 
         ArgumentCaptor<EventEnvelope<PaymentReceivedPayload>> captor = ArgumentCaptor.forClass(EventEnvelope.class);
         verify(processor).processPaymentReceived(captor.capture());
@@ -70,7 +70,7 @@ class PaymentEventsListenerTest {
         ConsumerRecord<String, String> record = new ConsumerRecord<>(
                 "payment.received", 0, 1L, reservationId.toString(), objectMapper.writeValueAsString(event));
 
-        listener.onPaymentReceived(record);
+        listener.onPaymentEvent(record);
 
         verifyNoInteractions(processor);
     }
@@ -80,8 +80,30 @@ class PaymentEventsListenerTest {
         ConsumerRecord<String, String> record = new ConsumerRecord<>(
                 "payment.received", 0, 1L, UUID.randomUUID().toString(), "not-json");
 
-        assertThatThrownBy(() -> listener.onPaymentReceived(record))
+        assertThatThrownBy(() -> listener.onPaymentEvent(record))
                 .isInstanceOf(Exception.class);
         verifyNoInteractions(processor);
+    }
+
+    @Test
+    void delegatesAValidPaymentFailedEvent() throws Exception {
+        UUID reservationId = UUID.randomUUID();
+        EventEnvelope<PaymentFailedPayload> event = new EventEnvelope<>(
+                UUID.randomUUID(),
+                "PaymentFailed",
+                Instant.now(),
+                reservationId,
+                new PaymentFailedPayload(
+                        UUID.randomUUID(), reservationId, new BigDecimal("149.70"), "AMOUNT_THRESHOLD")
+        );
+        ConsumerRecord<String, String> record = new ConsumerRecord<>(
+                "payment.rejected", 0, 2L, reservationId.toString(), objectMapper.writeValueAsString(event));
+
+        listener.onPaymentEvent(record);
+
+        ArgumentCaptor<EventEnvelope<PaymentFailedPayload>> captor = ArgumentCaptor.forClass(EventEnvelope.class);
+        verify(processor).processPaymentFailed(captor.capture());
+        assertThat(captor.getValue().aggregateId()).isEqualTo(reservationId);
+        assertThat(captor.getValue().payload().reason()).isEqualTo("AMOUNT_THRESHOLD");
     }
 }

@@ -48,7 +48,7 @@ les endpoints REST et les topics Kafka créés au TP4.
   - `Événement` — porte le **stock** (places totales / disponibles). Cœur de la
     contrainte « ne jamais survendre » → protégé par **verrou optimiste**. Il définit aussi
     le prix unitaire courant d'une place.
-  - `Réservation` — cycle de vie `PENDING → PAID | EXPIRED | CANCELLED`, avec **TTL**.
+  - `Réservation` — cycle de vie `PENDING → TICKET_ISSUED | EXPIRED | CANCELLED`, avec **TTL**.
     Elle fige le prix unitaire et le montant `unitPrice × quantity` au moment de la vente.
 - **Événements émis** : PlacesRéservées, RéservationRefusée, RéservationExpirée,
   PlacesLibérées, BilletÉmis, RéservationAnnulée.
@@ -61,9 +61,9 @@ les endpoints REST et les topics Kafka créés au TP4.
 - **Événements émis** : PaiementReçu, PaiementRefusé.
 - **Événements consommés** : PlacesRéservées (sait quelle réservation encaisser).
 
-### Contexte 3 — Notification (`notification-service`) — *bonus*
+### Contexte 3 — Notification (`notification-service`, Python / FastAPI) — *bonus*
 
-- Consomme BilletÉmis / RéservationExpirée → « email » simulé de confirmation.
+- Consomme BilletÉmis / RéservationExpirée par Kafka → « email » simulé dans MailDev.
 
 **Test de validation des frontières** : pour un cas d'usage (réserver → payer → billet),
 Réservation↔Paiement échangent **1 appel synchrone** (statut du paiement) + des faits
@@ -109,20 +109,21 @@ Tous les messages utilisent le même contrat de transport :
 | Événement          | Topic                         | Clé Kafka       | Émetteur        | Consommateur(s) prévu(s)         |
 |--------------------|-------------------------------|-----------------|-----------------|----------------------------------|
 | PlacesRéservées    | `booking.seat-reserved`       | `reservationId` | booking-service | payment-service                  |
-| RéservationExpirée | `booking.reservation-expired` | `reservationId` | booking-service | payment-service, notification    |
-| PlacesLibérées     | `booking.seat-released`       | `eventId`       | booking-service | projection stock                 |
+| RéservationExpirée | `booking.reservation-expired` | `reservationId` | booking-service | notification-service             |
+| PlacesLibérées     | `booking.seat-released`       | `reservationId` | booking-service | audit / future projection        |
 | BilletÉmis         | `booking.ticket-issued`       | `reservationId` | booking-service | notification-service             |
 | PaiementReçu       | `payment.received`            | `reservationId` | payment-service | booking-service                  |
 | PaiementRefusé     | `payment.rejected`            | `reservationId` | payment-service | booking-service                  |
 
 La clé `reservationId`, égale à l'`aggregateId`, conserve l'ordre du cycle de vie de chaque
 réservation et permet à `SeatReserved` puis `PaymentReceived` de rester corrélés. Le payload
-de `SeatReserved` conserve séparément l'`eventId` métier, `quantity`, `unitPrice` et `amount`.
-Les futurs événements de projection du stock (`booking.seat-released`) restent partitionnés
-par `eventId`, car leur ordre pertinent est celui des mutations d'un même événement.
+de `SeatReserved` conserve séparément l'`eventId` métier, `quantity`, `unitPrice`, `amount` et
+`expiresAt`. Tous les faits de la saga, y compris `SeatReleased`, restent partitionnés par
+`reservationId` afin de conserver l'ordre du cycle de vie de cet agrégat.
 Tous les topics ont 3 partitions et un facteur de réplication de 1 dans le cluster local
 mono-broker du TP4.
 
 Les erreurs épuisant leurs trois tentatives sont isolées dans des topics explicites :
-`booking.seat-reserved.DLQ` côté Node et `payment.received.DLT` côté Java. Ils possèdent aussi
-3 partitions afin de conserver la partition d'origine lors de la republication.
+`booking.seat-reserved.DLQ` côté Node, `payment.received.DLT` / `payment.rejected.DLT` côté
+Java et les DLT de notification. Ils possèdent aussi 3 partitions afin de conserver la
+partition d'origine lors de la republication.

@@ -74,6 +74,10 @@ spec:
               value: kafka:29092
             - name: KAFKA_ENABLED
               value: "true"
+            - name: RESERVATION_TTL_SECONDS
+              value: "120"
+            - name: RESERVATION_EXPIRATION_SCAN_INTERVAL_MS
+              value: "1000"
           readinessProbe:
             httpGet:
               path: /actuator/health

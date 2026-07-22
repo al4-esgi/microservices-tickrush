@@ -1,16 +1,15 @@
 package fr.esgi.tickrush.booking.messaging;
 
 import java.math.BigDecimal;
-import java.time.Instant;
 import java.util.UUID;
 
-public record SeatReservedPayload(
+public record TicketIssuedPayload(
+        UUID ticketId,
         UUID reservationId,
         UUID eventId,
+        String eventName,
         String customerRef,
         int quantity,
-        BigDecimal unitPrice,
-        BigDecimal amount,
-        Instant expiresAt
+        BigDecimal amount
 ) {
 }

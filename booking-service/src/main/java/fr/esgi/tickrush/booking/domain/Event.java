@@ -65,7 +65,13 @@ public class Event {
 
     /** Remet des places en vente (expiration ou annulation), sans dépasser le total. */
     public void release(int quantity) {
-        availableSeats = Math.min(totalSeats, availableSeats + quantity);
+        if (quantity <= 0) {
+            throw new IllegalArgumentException("La quantite a liberer doit etre strictement positive");
+        }
+        if (availableSeats + quantity > totalSeats) {
+            throw new IllegalStateException("La liberation depasserait le stock total de l'evenement " + id);
+        }
+        availableSeats += quantity;
     }
 
     public void changeUnitPrice(BigDecimal unitPrice) {

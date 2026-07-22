@@ -39,6 +39,10 @@ tickrush:
     topics:
       seat-reserved: booking.seat-reserved
       payment-received: payment.received
+      payment-failed: payment.rejected
+      ticket-issued: booking.ticket-issued
+      reservation-expired: booking.reservation-expired
+      seat-released: booking.seat-released
 
 management:
   endpoints:
@@ -48,7 +52,10 @@ management:
 
 # TTL d'une réservation non payée (user story 2 : remise en vente après 2 min)
 reservation:
-  ttl-seconds: 120
+  ttl-seconds: ${RESERVATION_TTL_SECONDS:120}
+  expiration:
+    enabled: ${RESERVATION_EXPIRATION_ENABLED:true}
+    scan-interval-ms: ${RESERVATION_EXPIRATION_SCAN_INTERVAL_MS:1000}
 
 # URL de payment-service : DNS de Service k8s en cluster, localhost en dev local
 payment:

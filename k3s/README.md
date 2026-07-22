@@ -22,7 +22,7 @@ Un dossier par composant, manifests bruts :
 | `kafka/` | Kafka 3.8 KRaft, Kafka UI, PVC et Job idempotent de création des topics métier + DLQ/DLT |
 | `booking-service/` | service Java (deployment + service + **ingress** `/events` `/reservations`), image `tickrush/booking-service:dev` |
 | `payment-service/` | service Node (deployment + service + **ingress** `/payments`), image `tickrush/payment-service:dev` |
-| `notification-service/` | service Python/FastAPI (deployment + service + **ingress** `/notifications`), image `tickrush/notification-service:dev` |
+| `notification-service/` | consumer Kafka Python/FastAPI + ingress `/notifications`, image `tickrush/notification-service:dev` |
 
 > Façade Traefik : **un `ingress.yaml` par service** (convention « un dossier par service »).
 > Traefik agrège tous les Ingress → routage identique à un fichier central. En local (k3d)

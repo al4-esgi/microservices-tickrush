@@ -33,7 +33,13 @@ class BookingEventPublisherTest {
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper().findAndRegisterModules();
-        publisher = new BookingEventPublisher(kafka, objectMapper, "booking.seat-reserved");
+        publisher = new BookingEventPublisher(
+                kafka,
+                objectMapper,
+                "booking.seat-reserved",
+                "booking.ticket-issued",
+                "booking.reservation-expired",
+                "booking.seat-released");
     }
 
     @Test
@@ -51,12 +57,13 @@ class BookingEventPublisherTest {
                         "client@test.fr",
                         2,
                         new BigDecimal("49.90"),
-                        new BigDecimal("99.80"))
+                        new BigDecimal("99.80"),
+                        Instant.now().plusSeconds(120))
         );
         when(kafka.send(anyString(), anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
-        publisher.publishSeatReserved(new SeatReservedApplicationEvent(envelope));
+        publisher.publish(new BookingApplicationEvent<>(envelope));
 
         ArgumentCaptor<String> value = ArgumentCaptor.forClass(String.class);
         verify(kafka).send(
@@ -69,5 +76,21 @@ class BookingEventPublisherTest {
                 .isEqualTo(businessEventId.toString());
         assertThat(json.path("payload").path("amount").decimalValue())
                 .isEqualByComparingTo("99.80");
+    }
+
+    @Test
+    void routesACompensationToSeatReleasedWithTheReservationKey() {
+        UUID reservationId = UUID.randomUUID();
+        EventEnvelope<SeatReleasedPayload> envelope = EventEnvelope.create(
+                "SeatReleased",
+                reservationId,
+                new SeatReleasedPayload(reservationId, UUID.randomUUID(), 3, "AMOUNT_THRESHOLD", 100));
+        when(kafka.send(anyString(), anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        publisher.publish(new BookingApplicationEvent<>(envelope));
+
+        verify(kafka).send(
+                eq("booking.seat-released"), eq(reservationId.toString()), anyString());
     }
 }
