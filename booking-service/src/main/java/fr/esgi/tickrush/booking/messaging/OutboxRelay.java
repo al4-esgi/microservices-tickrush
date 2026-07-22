@@ -2,6 +2,7 @@ package fr.esgi.tickrush.booking.messaging;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -44,13 +45,17 @@ public class OutboxRelay {
         }
 
         try {
-            kafka.send(event.getTopic(), event.getEventKey(), event.getPayload())
-                    .get(sendTimeoutMs, TimeUnit.MILLISECONDS);
-            event.markPublished(Instant.now());
-            outbox.save(event);
-            log.info("Outbox publiee: outboxId={}, eventId={}, eventType={}, reservationId={}, topic={}",
-                    event.getId(), event.getEventId(), event.getEventType(),
-                    event.getAggregateId(), event.getTopic());
+            ProducerRecord<String, String> record = new ProducerRecord<>(
+                    event.getTopic(), event.getEventKey(), event.getPayload());
+            event.getTraceContext().injectInto(record.headers());
+            try (var ignored = event.getTraceContext().activate()) {
+                kafka.send(record).get(sendTimeoutMs, TimeUnit.MILLISECONDS);
+                event.markPublished(Instant.now());
+                outbox.save(event);
+                log.info("Outbox publiee: outboxId={}, eventId={}, eventType={}, reservationId={}, topic={}",
+                        event.getId(), event.getEventId(), event.getEventType(),
+                        event.getAggregateId(), event.getTopic());
+            }
             return true;
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();

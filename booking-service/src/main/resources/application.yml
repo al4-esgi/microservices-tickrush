@@ -1,6 +1,8 @@
 spring:
   application:
     name: booking-service
+  main:
+    banner-mode: "off"
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:bookingdb}
     username: ${DB_USER:booking}
@@ -64,7 +66,13 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,circuitbreakers,circuitbreakerevents
+        include: health,info,metrics,prometheus,circuitbreakers,circuitbreakerevents
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
 
 # TTL d'une réservation non payée (user story 2 : remise en vente après 2 min)
 reservation:

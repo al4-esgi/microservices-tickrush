@@ -8,6 +8,7 @@ import {
   PAYMENT_FAILED_TOPIC,
   PAYMENT_RECEIVED_TOPIC,
 } from './kafka.constants';
+import { captureTraceContext } from './outbox-trace-context';
 import { PaymentOutboxEventEntity } from './payment-outbox-event.entity';
 
 export type QueuedPaymentResult = {
@@ -28,6 +29,7 @@ export class PaymentOutboxWriter {
     dto: CreatePaymentDto,
     forcedFailureReason?: string,
   ): Promise<QueuedPaymentResult> {
+    const traceContext = captureTraceContext();
     return this.dataSource.transaction(async (manager) => {
       const { payment, created } = await this.payments.authorize(
         dto,
@@ -70,6 +72,7 @@ export class PaymentOutboxWriter {
           topic,
           eventKey: response.aggregateId,
           payload: JSON.stringify(response),
+          ...traceContext,
           createdAt: new Date(response.occurredAt),
           publishedAt: null,
         }),

@@ -8,6 +8,7 @@ import {
 import { Kafka, Partitioners, Producer } from 'kafkajs';
 import { DataSource } from 'typeorm';
 import { KAFKA_CLIENT } from './kafka.constants';
+import { traceContextHeaders, withTraceContext } from './outbox-trace-context';
 import { PaymentOutboxEventEntity } from './payment-outbox-event.entity';
 
 @Injectable()
@@ -93,17 +94,26 @@ export class PaymentOutboxRelayService
         return false;
       }
 
-      await this.producer.send({
-        topic: event.topic,
-        acks: -1,
-        messages: [{ key: event.eventKey, value: event.payload }],
+      const headers = traceContextHeaders(event);
+      return withTraceContext(event, async () => {
+        await this.producer.send({
+          topic: event.topic,
+          acks: -1,
+          messages: [
+            {
+              key: event.eventKey,
+              value: event.payload,
+              ...(Object.keys(headers).length > 0 ? { headers } : {}),
+            },
+          ],
+        });
+        event.publishedAt = new Date();
+        await manager.save(event);
+        this.logger.log(
+          `Outbox publiee: outboxId=${event.id}, eventId=${event.eventId}, eventType=${event.eventType}, reservationId=${event.aggregateId}, topic=${event.topic}`,
+        );
+        return true;
       });
-      event.publishedAt = new Date();
-      await manager.save(event);
-      this.logger.log(
-        `Outbox publiee: outboxId=${event.id}, eventId=${event.eventId}, eventType=${event.eventType}, reservationId=${event.aggregateId}, topic=${event.topic}`,
-      );
-      return true;
     });
   }
 

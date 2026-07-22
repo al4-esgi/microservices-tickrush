@@ -40,6 +40,15 @@ public class OutboxEvent {
     @Column(nullable = false, updatable = false, columnDefinition = "text")
     private String payload;
 
+    @Column(name = "trace_parent", updatable = false, length = 55)
+    private String traceParent;
+
+    @Column(name = "trace_state", updatable = false, length = 512)
+    private String traceState;
+
+    @Column(updatable = false, columnDefinition = "text")
+    private String baggage;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -56,7 +65,8 @@ public class OutboxEvent {
                         String topic,
                         String eventKey,
                         String payload,
-                        Instant createdAt) {
+                        Instant createdAt,
+                        TraceContextSnapshot traceContext) {
         this.eventId = eventId;
         this.eventType = eventType;
         this.aggregateId = aggregateId;
@@ -64,9 +74,19 @@ public class OutboxEvent {
         this.eventKey = eventKey;
         this.payload = payload;
         this.createdAt = createdAt;
+        this.traceParent = traceContext.traceParent();
+        this.traceState = traceContext.traceState();
+        this.baggage = traceContext.baggage();
     }
 
     public static OutboxEvent pending(EventEnvelope<?> envelope, String topic, String payload) {
+        return pending(envelope, topic, payload, TraceContextSnapshot.capture());
+    }
+
+    static OutboxEvent pending(EventEnvelope<?> envelope,
+                               String topic,
+                               String payload,
+                               TraceContextSnapshot traceContext) {
         return new OutboxEvent(
                 envelope.eventId(),
                 envelope.eventType(),
@@ -74,7 +94,8 @@ public class OutboxEvent {
                 topic,
                 envelope.aggregateId().toString(),
                 payload,
-                envelope.occurredAt()
+                envelope.occurredAt(),
+                traceContext
         );
     }
 
@@ -112,6 +133,10 @@ public class OutboxEvent {
 
     public String getPayload() {
         return payload;
+    }
+
+    TraceContextSnapshot getTraceContext() {
+        return new TraceContextSnapshot(traceParent, traceState, baggage);
     }
 
     public Instant getCreatedAt() {

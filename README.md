@@ -56,7 +56,7 @@ producteurs. Les décisions sont justifiées dans
 [`ADR-001`](docs/adr/001-choregraphie-vs-orchestration.md) et
 [`ADR-002`](docs/adr/002-transactional-outbox.md).
 
-### État fonctionnel après le TP7
+### État fonctionnel après le TP8
 
 - Réservation et décrément du stock atomiques, verrou optimiste avec retries bornés et test
   concurrent de non-survente.
@@ -78,9 +78,17 @@ producteurs. Les décisions sont justifiées dans
   uniquement après l'ACK Kafka.
 - Publication at-least-once couplée à l'Inbox `processed_events` : aucune perte et un seul
   effet métier malgré un éventuel doublon.
+- Métriques Prometheus sur `/actuator/prometheus` et `/metrics`, avec cibles applicatives
+  contrôlées `UP`.
+- Dashboard Grafana provisionné avec les quatre signaux Rate, Errors, Duration p95 et lag
+  Kafka.
+- Traces OpenTelemetry exportées vers Jaeger par agents Java et Node, avec propagation W3C
+  conservée à travers Kafka et les deux Outbox.
+- Logs JSON Logback/Pino corrélés par `trace_id` et `span_id`.
 
 La saga et sa version orchestrée sont détaillées dans [`docs/saga.md`](docs/saga.md). La
-preuve de panne Outbox est reproductible avec `task tp7:outbox`.
+preuve de panne Outbox est reproductible avec `task tp7:outbox`; la preuve d'observabilité
+complète avec `task tp8:demo`.
 
 ---
 
@@ -107,6 +115,7 @@ task tp6:demo    # succès + compensation mesurée + rejeu idempotent
 task tp6:ttl     # expiration et remise en stock, configuration restaurée ensuite
 task tp6:chaos   # reprise automatique après arrêt du payment-service
 task tp7:outbox  # Kafka arrêté : POST 201, Outbox en attente, puis rattrapage sans perte
+task tp8:demo    # métriques, dashboard, trace Kafka/compensation et logs JSON corrélés
 task demo:reset  # remettre stocks, réservations et paiements à zéro (avec confirmation)
 task front       # console de démo React (http://localhost:5173)
 task kafka:topics        # lister et décrire les 11 topics
@@ -114,7 +123,7 @@ task kafka:produce-demo  # produire 10 messages avec 3 clés
 task kafka:consume-demo  # afficher clé, partition et offset
 task kafka:lag-demo      # créer puis observer le lag d'un groupe
 task kafka:ui            # Kafka UI (http://localhost:8090)
-task forward     # ouvrir tous les port-forwards (services, DBs, MailDev) en arrière-plan
+task forward     # services, DBs, MailDev, Prometheus, Grafana et Jaeger en arrière-plan
 task unforward   # les fermer tous
 task redeploy    # rebuild + redéploiement après une modif de code
 task stop        # éteindre le cluster (données conservées) — task start pour rallumer
@@ -212,6 +221,54 @@ un crash après l'ACK et avant le marquage peut republier, mais les consommateur
 neutralisent ce doublon. Le choix et ses coûts sont détaillés dans
 [`ADR-002`](docs/adr/002-transactional-outbox.md).
 
+### Observabilité - TP8
+
+Le TP8 reste **100 % k3s** : les services Compose demandés par l'énoncé sont remplacés par
+les Deployments et ConfigMaps de [`k3s/observability`](k3s/observability). `task forward`
+expose les interfaces locales suivantes :
+
+| Outil | URL | Usage |
+|---|---|---|
+| Prometheus | `http://localhost:9090` | targets et requêtes PromQL |
+| Grafana | `http://localhost:3001` (`admin/admin`) | dashboard `TickRush - RED et Kafka` |
+| Jaeger | `http://localhost:16686` | traces distribuées de la saga |
+
+Prometheus scrape `booking-service:8080/actuator/prometheus` et
+`payment-service:3000/metrics` toutes les 5 secondes. Le dashboard Grafana est exporté sous
+[`monitoring/grafana`](monitoring/grafana), puis injecté par Kustomize avec sa datasource :
+il est recréé après chaque redémarrage, sans manipulation dans l'UI.
+
+Les agents OpenTelemetry instrumentent HTTP, JDBC/pg et Kafka/Spring Kafka. L'Outbox crée
+une frontière temporelle que l'auto-instrumentation seule ne peut pas franchir : TickRush
+persiste donc `traceparent`, `tracestate` et `baggage` avec chaque événement, puis restaure ce
+contexte avant le `send` Kafka. Une seule trace relie ainsi le POST initial, les deux bases,
+les producteurs/consommateurs Kafka, le paiement et la compensation.
+
+```bash
+task redeploy
+task forward
+task tp8:demo
+```
+
+`task tp8:demo` redémarre Grafana, exige les deux targets Prometheus `UP`, contrôle les quatre
+panneaux provisionnés, déclenche un succès et un refus, compare le `trace_id` des logs Java et
+Node, puis interroge Jaeger et Prometheus. L'exécution de référence a produit une trace de
+**57 spans**, **2 services** et **916 ms**, comprenant `booking.seat-reserved publish`,
+`process booking.seat-reserved`, `send payment.rejected`, `payment.rejected process` et
+`booking.seat-released publish`.
+
+**Choix pour la soutenance : la trace Jaeger du chemin compensé.** Elle montre en une seule
+vue la propagation Kafka, les transactions Outbox, le changement de langage et le retour de
+compensation. La procédure est : `task forward`, `task tp8:demo`, lire le `trace_id` affiché,
+puis le coller dans Jaeger.
+
+![Trace Jaeger : traversée Kafka entre booking et payment](docs/images/tp8-jaeger-kafka.png)
+
+![Trace Jaeger : publication de la compensation SeatReleased](docs/images/tp8-jaeger-compensation.png)
+
+Le protocole, les métriques et les requêtes du dashboard sont détaillés dans
+[`docs/tp08-observabilite.md`](docs/tp08-observabilite.md).
+
 ### Tout déployer dans le cluster (démo de soutenance)
 
 ```bash
@@ -229,6 +286,7 @@ k3d image import tickrush/booking-service:dev tickrush/payment-service:dev \
 kubectl apply -f k3s/namespace.yaml
 kubectl apply -f k3s/booking-db/ -f k3s/payment-db/ -f k3s/maildev/
 kubectl apply -k k3s/kafka/
+kubectl apply -k k3s/observability/
 kubectl -n tickrush rollout status deployment/kafka
 kubectl -n tickrush wait --for=condition=complete job/kafka-init --timeout=180s
 
@@ -343,18 +401,22 @@ microservices-tickrush/
 │   ├── decoupage.md      # Event Storming (contextes, contrats)
 │   ├── tp04-kafka.md     # démonstration partitions, offsets, lag et rebalance
 │   ├── saga.md           # saga réelle et esquisse orchestrée
-│   └── tp05-pipeline.md  # pipeline, idempotence, retries et dead-letter topics
+│   ├── tp05-pipeline.md  # pipeline, idempotence, retries et dead-letter topics
+│   ├── tp08-observabilite.md # métriques, traces, logs et preuve de soutenance
+│   └── images/           # captures réelles Jaeger du TP8
 ├── k3s/                  # manifests Kubernetes (remplace docker-compose)
 │   ├── namespace.yaml
 │   ├── booking-db/       # PostgreSQL du booking-service
 │   ├── payment-db/       # PostgreSQL du payment-service
 │   ├── maildev/          # faux SMTP + UI web (capture les emails)
 │   ├── kafka/            # Kafka KRaft + UI + PVC + initialisation des topics
+│   ├── observability/    # Prometheus + Grafana provisionné + Jaeger v2
 │   ├── booking-service/  # deployment + service + ingress (image tickrush/booking-service)
 │   ├── payment-service/  # deployment + service + ingress (image tickrush/payment-service)
 │   └── notification-service/  # deployment + service + ingress (image tickrush/notification-service)
+├── monitoring/grafana/   # export JSON du dashboard demandé par le TP8
 ├── booking-service/      # service Java — Spring Boot 3.5, JDK 21
 ├── payment-service/      # service Node/TS — NestJS 11
-├── scripts/              # scénarios reproductibles TP4 à TP7
+├── scripts/              # scénarios reproductibles TP4 à TP8
 └── notification-service/ # service Python — consumer Kafka + FastAPI + MailDev
 ```

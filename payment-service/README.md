@@ -10,6 +10,7 @@ propre base PostgreSQL et garantit un paiement unique par réservation grâce à
 - `GET /payments/by-reservation/{reservationId}/status` : `RECEIVED`, `REJECTED` ou `NONE`.
 - `GET /health/live` : santé du processus.
 - `GET /health/ready` : santé du processus et connexion PostgreSQL.
+- `GET /metrics` : métriques processus et histogramme HTTP Prometheus.
 
 Le taux de refus est configurable avec `PAYMENT_FAILURE_RATE` entre 0 et 1. L'idempotence
 reste garantie sous concurrence : une violation PostgreSQL `23505` provoque la relecture du
@@ -43,3 +44,15 @@ npm run build
 
 En k3s, le service utilise `payment-db:5432`; aucun autre service n'accède à cette base.
 La table `outbox` est privée au service, comme la table `payments`.
+
+## Observabilité
+
+`prom-client` expose les métriques par défaut et
+`tickrush_http_request_duration_seconds{method,route,status}`. `nestjs-pino` produit les logs
+JSON. En k3s, `NODE_OPTIONS=--require @opentelemetry/auto-instrumentations-node/register`
+charge OpenTelemetry avant NestJS, TypeORM et KafkaJS; Pino ajoute alors `trace_id` et
+`span_id` aux logs actifs.
+
+Le contexte W3C reçu avec `SeatReserved` est stocké dans la ligne Outbox du résultat de
+paiement, puis restauré par le relayeur. `PaymentReceived` ou `PaymentFailed` reste ainsi dans
+la trace initiée par `POST /reservations`, malgré le polling asynchrone.

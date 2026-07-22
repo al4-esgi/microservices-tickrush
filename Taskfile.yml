@@ -105,20 +105,21 @@ tasks:
       - kubectl apply -f k3s/booking-db/ -f k3s/payment-db/ -f k3s/maildev/
       - kubectl -n {{.NS}} delete job kafka-init --ignore-not-found
       - kubectl apply -k k3s/kafka/
+      - kubectl apply -k k3s/observability/
       - task: wait:infra
       - kubectl apply -f k3s/booking-service/ -f k3s/payment-service/ -f k3s/notification-service/
 
   wait:infra:
     internal: true
     cmds:
-      - for: [booking-db, payment-db, maildev, kafka, kafka-ui]
+      - for: [booking-db, payment-db, maildev, kafka, kafka-ui, prometheus, grafana, jaeger]
         cmd: kubectl -n {{.NS}} rollout status deployment/{{.ITEM}} --timeout=240s
       - kubectl -n {{.NS}} wait --for=condition=complete job/kafka-init --timeout=180s
 
   wait:
     desc: "Attendre que tous les déploiements soient prêts"
     cmds:
-      - for: [booking-db, payment-db, maildev, kafka, kafka-ui, booking-service, payment-service, notification-service]
+      - for: [booking-db, payment-db, maildev, kafka, kafka-ui, prometheus, grafana, jaeger, booking-service, payment-service, notification-service]
         cmd: kubectl -n {{.NS}} rollout status deployment/{{.ITEM}} --timeout=240s
       - kubectl -n {{.NS}} wait --for=condition=complete job/kafka-init --timeout=180s
 
@@ -129,7 +130,10 @@ tasks:
       - task: import
       - kubectl -n {{.NS}} delete job kafka-init --ignore-not-found
       - kubectl apply -k k3s/kafka/
+      - kubectl apply -k k3s/observability/
       - kubectl -n {{.NS}} rollout status deployment/kafka --timeout=240s
+      - for: [prometheus, grafana, jaeger]
+        cmd: kubectl -n {{.NS}} rollout status deployment/{{.ITEM}} --timeout=240s
       - kubectl -n {{.NS}} wait --for=condition=complete job/kafka-init --timeout=180s
       - kubectl apply -f k3s/booking-service/ -f k3s/payment-service/ -f k3s/notification-service/
       - kubectl -n {{.NS}} rollout restart deployment/booking-service deployment/payment-service deployment/notification-service
@@ -151,6 +155,9 @@ tasks:
         echo "Bases (via task forward) : booking-db localhost:5432 | payment-db localhost:5433"
         echo "Kafka UI : task kafka:ui  puis  http://localhost:8090"
         echo "Kafka externe : task kafka:forward  ->  localhost:9092"
+        echo "Prometheus : task forward  puis  http://localhost:9090"
+        echo "Grafana : task forward  puis  http://localhost:3001  (admin/admin)"
+        echo "Jaeger : task forward  puis  http://localhost:16686"
         echo ""
 
   forward:
@@ -166,6 +173,9 @@ tasks:
         nohup kubectl -n {{.NS}} port-forward svc/payment-db 5433:5432           >/tmp/pf-payment-db.log    2>&1 &
         nohup kubectl -n {{.NS}} port-forward svc/kafka 9092:9092                >/tmp/pf-kafka.log         2>&1 &
         nohup kubectl -n {{.NS}} port-forward svc/kafka-ui 8090:8080             >/tmp/pf-kafka-ui.log      2>&1 &
+        nohup kubectl -n {{.NS}} port-forward svc/prometheus 9090:9090           >/tmp/pf-prometheus.log    2>&1 &
+        nohup kubectl -n {{.NS}} port-forward svc/grafana 3001:3000              >/tmp/pf-grafana.log       2>&1 &
+        nohup kubectl -n {{.NS}} port-forward svc/jaeger 16686:16686             >/tmp/pf-jaeger.log        2>&1 &
         sleep 2
       - task: forward:status
 
@@ -333,6 +343,12 @@ tasks:
     desc: "Couper Kafka, créer une réservation puis prouver le rattrapage Outbox"
     cmds:
       - bash scripts/tp07-outbox-crash-demo.sh
+
+  # ============ Observabilité / TP8 ============
+  tp8:demo:
+    desc: "Prouver métriques, dashboard provisionné, trace saga/compensation et logs corrélés"
+    cmds:
+      - bash scripts/tp08-observability-demo.sh
 
   # ============ Test rapide ============
   smoke:

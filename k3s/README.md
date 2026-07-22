@@ -20,6 +20,7 @@ Un dossier par composant, manifests bruts :
 | `payment-db/` | PostgreSQL du `payment-service` (secret, pvc, deployment, service) |
 | `maildev/` | faux SMTP (1025) + UI web (1080) qui capture les emails (image publique `maildev/maildev`) |
 | `kafka/` | Kafka 3.8 KRaft, Kafka UI, PVC et Job idempotent de création des topics métier + DLQ/DLT |
+| `observability/` | Prometheus, Grafana provisionné et Jaeger v2 avec leurs Services |
 | `booking-service/` | service Java (deployment + service + **ingress** `/events` `/reservations`), image `tickrush/booking-service:dev` |
 | `payment-service/` | service Node (deployment + service + **ingress** `/payments`), image `tickrush/payment-service:dev` |
 | `notification-service/` | consumer Kafka Python/FastAPI + ingress `/notifications`, image `tickrush/notification-service:dev` |
@@ -37,6 +38,7 @@ configurent un polling toutes les 500 ms. La preuve de panne reste 100 % Kuberne
 
 ```bash
 task tp7:outbox  # scale Kafka à 0, POST 201, inspection SQL, scale à 1 et rattrapage
+task tp8:demo    # targets, dashboard, trace saga/compensation et logs corrélés
 ```
 
 ## Images (pas de registry — import direct dans k3d)
@@ -59,17 +61,25 @@ k3d image import tickrush/booking-service:dev tickrush/payment-service:dev \
 # 1. Cluster local (une seule fois) — Traefik est inclus dans k3s
 k3d cluster create tickrush --port "8081:80@loadbalancer" --port "8443:443@loadbalancer"
 
-# 2. Déployer les bases et Kafka
+# 2. Déployer les bases, Kafka et l'observabilité
 kubectl apply -f namespace.yaml
 kubectl apply -f booking-db/ -f payment-db/ -f maildev/
 kubectl apply -k kafka/
+kubectl apply -k observability/
 kubectl -n tickrush rollout status deployment/booking-db
 kubectl -n tickrush rollout status deployment/kafka
+kubectl -n tickrush rollout status deployment/prometheus
+kubectl -n tickrush rollout status deployment/grafana
+kubectl -n tickrush rollout status deployment/jaeger
 kubectl -n tickrush wait --for=condition=complete job/kafka-init --timeout=180s
 
 # 3. Rendre la base joignable depuis le service lancé en local (mvnw)
 kubectl -n tickrush port-forward svc/booking-db 5432:5432
 ```
+
+`task forward` expose aussi Prometheus sur `9090`, Grafana sur `3001` et Jaeger sur `16686`.
+Les agents applicatifs envoient leurs traces au Service interne `jaeger:4318`; aucun endpoint
+OTLP n'a besoin d'être publié hors du cluster.
 
 Astuces cycle de vie :
 

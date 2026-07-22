@@ -6,6 +6,7 @@ import { DataSource } from 'typeorm';
 import { AppController } from '../src/app.controller';
 import { AppService } from '../src/app.service';
 import { HealthController } from '../src/health/health.controller';
+import { MetricsModule } from '../src/metrics/metrics.module';
 import { PaymentsController } from '../src/payments/payments.controller';
 import { PaymentsService } from '../src/payments/payments.service';
 
@@ -34,6 +35,7 @@ describe('Payment API (e2e)', () => {
     dataSource.query.mockResolvedValue([{ '?column?': 1 }]);
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [MetricsModule],
       controllers: [AppController, HealthController, PaymentsController],
       providers: [
         AppService,
@@ -82,6 +84,30 @@ describe('Payment API (e2e)', () => {
           status: 'RECEIVED',
         });
       });
+  });
+
+  it('GET /metrics exposes default and HTTP RED metrics', async () => {
+    await request(app.getHttpServer()).get('/').expect(200);
+    await request(app.getHttpServer())
+      .post('/payments')
+      .send({ reservationId: 'invalid', amount: 0 })
+      .expect(400);
+
+    const response = await request(app.getHttpServer())
+      .get('/metrics')
+      .expect(200);
+
+    expect(response.headers['content-type']).toContain('text/plain');
+    expect(response.text).toContain(
+      'payment_service_process_cpu_seconds_total',
+    );
+    expect(response.text).toContain(
+      'tickrush_http_request_duration_seconds_count',
+    );
+    expect(response.text).toContain('method="GET",route="/",status="200"');
+    expect(response.text).toContain(
+      'method="POST",route="/payments",status="400"',
+    );
   });
 
   afterEach(async () => {

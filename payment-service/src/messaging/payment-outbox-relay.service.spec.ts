@@ -29,6 +29,9 @@ describe('PaymentOutboxRelayService', () => {
     topic: 'payment.received',
     eventKey: '65bfbf4f-6795-49a5-a57b-6f4ff78f0ac1',
     payload: '{"eventType":"PaymentReceived"}',
+    traceParent: null,
+    traceState: null,
+    baggage: null,
     createdAt: new Date('2026-07-22T10:00:00Z'),
     publishedAt: null,
   });
@@ -93,6 +96,25 @@ describe('PaymentOutboxRelayService', () => {
 
     expect(event.publishedAt).toBeNull();
     expect(manager.save).not.toHaveBeenCalled();
+  });
+
+  it('forwards the W3C context stored with the outbox event', async () => {
+    const event = pending();
+    event.traceParent =
+      '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
+    queryBuilder.getOne.mockResolvedValue(event);
+
+    await expect(service.publishNext()).resolves.toBe(true);
+
+    expect(producer.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: [
+          expect.objectContaining({
+            headers: { traceparent: event.traceParent },
+          }),
+        ],
+      }),
+    );
   });
 
   it('does nothing when no row is pending', async () => {

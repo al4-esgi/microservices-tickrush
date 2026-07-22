@@ -1,15 +1,23 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { LoggerModule } from 'nestjs-pino';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { HealthController } from './health/health.controller';
 import { KafkaMessagingModule } from './messaging/kafka-messaging.module';
 import { PaymentOutboxEventEntity } from './messaging/payment-outbox-event.entity';
+import { MetricsModule } from './metrics/metrics.module';
 import { PaymentEntity } from './payments/payment.entity';
 import { PaymentsModule } from './payments/payments.module';
 
 @Module({
   imports: [
+    LoggerModule.forRoot({
+      pinoHttp: {
+        level: process.env.LOG_LEVEL ?? 'info',
+        customProps: () => ({ service: 'payment-service' }),
+      },
+    }),
     TypeOrmModule.forRoot({
       type: 'postgres',
       host: process.env.DB_HOST ?? 'localhost',
@@ -22,6 +30,7 @@ import { PaymentsModule } from './payments/payments.module';
     }),
     PaymentsModule,
     KafkaMessagingModule,
+    MetricsModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],

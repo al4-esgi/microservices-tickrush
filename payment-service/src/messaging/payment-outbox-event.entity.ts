@@ -24,6 +24,25 @@ export class PaymentOutboxEventEntity {
   @Column({ type: 'text' })
   payload: string;
 
+  @Column({
+    name: 'trace_parent',
+    type: 'varchar',
+    nullable: true,
+    length: 55,
+  })
+  traceParent: string | null;
+
+  @Column({
+    name: 'trace_state',
+    type: 'varchar',
+    nullable: true,
+    length: 512,
+  })
+  traceState: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  baggage: string | null;
+
   @Column({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

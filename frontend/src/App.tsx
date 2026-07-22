@@ -32,7 +32,7 @@ export default function App() {
         </TabsContent>
       </Tabs>
       <footer className="pt-4 text-center text-xs text-muted-foreground">
-        TickRush · ESGI 4AL · k3s + Traefik · saga Kafka + Outbox (TP7)
+        TickRush · ESGI 4AL · k3s · saga Kafka + Outbox + observabilité (TP8)
       </footer>
     </div>
   )

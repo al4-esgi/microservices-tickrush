@@ -45,7 +45,9 @@ Outbox au sein de la transaction PostgreSQL locale. Les relayeurs publient ensui
 sémantique at-least-once. Les résultats de paiement consommés sont dédupliqués dans
 `processed_events` au sein de la même transaction que leur effet métier. Le TTL prend un
 verrou pessimiste sur la réservation et la transition d'état empêche toute seconde
-libération. La décision complète est dans
+libération. Depuis le TP8, le contexte W3C (`traceparent`, `tracestate`, `baggage`) est
+persisté avec la ligne Outbox puis restauré avant publication : la trace reste causale malgré
+le polling asynchrone. La décision Outbox complète est dans
 [`ADR-002`](adr/002-transactional-outbox.md).
 
 ## Machine à états d'une version orchestrée
@@ -91,6 +93,7 @@ task tp6:demo   # succès, compensation mesurée et rejeu idempotent
 task tp6:ttl    # expiration accélérée, remise en stock, configuration restaurée
 task tp6:chaos  # payment-service indisponible puis reprise automatique
 task tp7:outbox # Kafka indisponible, ligne en attente puis rattrapage sans perte
+task tp8:demo   # trace complète de la saga et de sa compensation dans Jaeger
 ```
 
 Le scénario de compensation affiche le stock avant la réservation, après la remise en vente,

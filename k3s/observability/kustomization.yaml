@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: tickrush
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+configMapGenerator:
+  - name: prometheus-config
+    files:
+      - prometheus.yml=prometheus/prometheus.yml
+  - name: grafana-datasources
+    files:
+      - datasource.yml=grafana/provisioning/datasources/datasource.yml
+  - name: grafana-dashboard-provider
+    files:
+      - dashboard.yml=grafana/provisioning/dashboards/dashboard.yml
+  - name: grafana-dashboards
+    files:
+      - tickrush-red.json=grafana/dashboards/tickrush-red.json
+
+resources:
+  - prometheus.yaml
+  - grafana.yaml
+  - jaeger.yaml

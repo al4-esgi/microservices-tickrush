@@ -86,6 +86,29 @@ spec:
               value: "120"
             - name: RESERVATION_EXPIRATION_SCAN_INTERVAL_MS
               value: "1000"
+            # Agent OpenTelemetry : instrumentation HTTP/JDBC/Kafka sans code metier.
+            - name: JAVA_TOOL_OPTIONS
+              value: -javaagent:/app/opentelemetry-javaagent.jar
+            - name: OTEL_SERVICE_NAME
+              value: booking-service
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://jaeger:4318
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: http/protobuf
+            - name: OTEL_TRACES_EXPORTER
+              value: otlp
+            - name: OTEL_METRICS_EXPORTER
+              value: none
+            - name: OTEL_LOGS_EXPORTER
+              value: none
+            - name: OTEL_PROPAGATORS
+              value: tracecontext,baggage
+            - name: OTEL_TRACES_SAMPLER
+              value: always_on
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: deployment.environment.name=local-k3s,service.version=tp8
+            - name: OTEL_INSTRUMENTATION_KAFKA_EXPERIMENTAL_SPAN_ATTRIBUTES
+              value: "true"
           readinessProbe:
             httpGet:
               path: /actuator/health
